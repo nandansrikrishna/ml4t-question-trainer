@@ -176,7 +176,7 @@ export default function Home() {
           <button className={`nav-item ${tab === "guide" ? "active" : ""}`} onClick={() => setTab("guide")}><span>03</span> Pool guide</button>
         </nav>
         <div className="sidebar-stats">
-          <span>{reviewedCount}<small>seen</small></span><span>{dueCount}<small>due</small></span>
+          <span>{reviewedCount}<small>seen</small></span><span>{dueCount}<small>available</small></span>
         </div>
         <div className="sidebar-note"><span className="status-dot" /><p><strong>Rev. 08.10.2026</strong><br />938 published questions loaded</p></div>
       </aside>
@@ -240,7 +240,7 @@ export default function Home() {
             <aside className="session-panel">
               <span className="eyebrow">This session</span>
               <div className="score-ring" style={{ "--score": `${sessionAccuracy || 0}%` } as React.CSSProperties}><strong>{sessionStatements ? `${sessionAccuracy}%` : "—"}</strong><span>accuracy</span></div>
-              <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Statements</dt><dd>{sessionStatements}</dd></div><div><dt>Pool due</dt><dd>{dueCount}</dd></div></dl>
+              <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Statements</dt><dd>{sessionStatements}</dd></div><div><dt>Pool available</dt><dd>{dueCount}</dd></div></dl>
               <div className="focus-box"><span>Current domain</span><strong>{question.domain}</strong><small>{question.area} · Exam {question.exam}</small></div>
               <p className="key-hint"><kbd>1–5</kbd> toggle · <kbd>Enter</kbd> check</p>
             </aside>
@@ -261,7 +261,7 @@ export default function Home() {
             <div className="metric-grid">
               <article><span>Questions seen</span><strong>{reviewedCount}</strong><small>of {QUESTIONS.length}</small></article>
               <article><span>Statement accuracy</span><strong>{overallAccuracy || "—"}{overallAccuracy ? "%" : ""}</strong><small>across all attempts</small></article>
-              <article><span>Ready to review</span><strong>{dueCount}</strong><small>new and due cards</small></article>
+              <article><span>Available now</span><strong>{dueCount}</strong><small>new and ready-to-revisit questions</small></article>
               <article><span>Pool coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>device-local progress</small></article>
             </div>
             <div className="domain-table-card">
@@ -272,7 +272,7 @@ export default function Home() {
                   return <div className="domain-row" key={row.label}>
                     <div><span className="area-tag">{row.area === "Machine Learning" ? "ML" : "QF"}</span><strong>{row.label}</strong></div>
                     <div className="bar"><span style={{ width: `${rowAccuracy}%` }} /></div>
-                    <span>{row.total ? `${rowAccuracy}%` : "Not started"}</span><small>{row.reviewed} seen · {row.due} due</small>
+                    <span>{row.total ? `${rowAccuracy}%` : "Not started"}</span><small>{row.reviewed} seen · {row.due} available</small>
                   </div>;
                 })}
               </div>
@@ -306,7 +306,7 @@ export default function Home() {
             <fieldset><legend>Knowledge area</legend><div className="segmented">{[["all","Mixed"],["Machine Learning","Machine Learning"],["Quantitative Finance","Quant Finance"]].map(([value,label]) => <button key={value} className={areaFilter === value ? "selected" : ""} onClick={() => { setAreaFilter(value); setDomainFilter("all"); }}>{label}</button>)}</div></fieldset>
             <label className="select-label">Domain<select value={domainFilter} onChange={(event) => setDomainFilter(event.target.value)}><option value="all">All matching domains</option>{domainOptions.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
             <fieldset><legend>Questions</legend><div className="segmented compact">{[10,20,50].map((size) => <button key={size} className={sessionSize === size ? "selected" : ""} onClick={() => setSessionSize(size)}>{size}</button>)}</div></fieldset>
-            <div className="modal-note"><span>↻</span><p><strong>Due-first sequencing</strong><br />New and overdue questions appear before familiar cards.</p></div>
+            <div className="modal-note"><span>↻</span><p><strong>Available-first sequencing</strong><br />New and ready-to-revisit questions appear before recently reviewed ones.</p></div>
             <button className="start-button" onClick={startSession}>Start session <span>→</span></button>
           </section>
         </div>
