@@ -3,16 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "catalog:seed": "node scripts/generate_catalog_seed.mjs",
     "start": "next start",
-    "lint": "eslint . --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern .next",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "16.2.6",
+    "@supabase/ssr": "0.12.5",
+    "@supabase/supabase-js": "2.112.4",
+    "next": "16.3.2",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -22,7 +26,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.3.2",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3"
   },

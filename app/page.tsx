@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Review } from "../lib/progress";
+import { useProgressSync } from "./use-progress-sync";
+import questionKeys from "./data/question-keys.json";
 import rawQuestions from "./data/questions.json";
 
 type Statement = { label: string; text: string; answer: boolean; explanation: string };
@@ -9,22 +12,18 @@ type Question = {
   groupIndex: number; group: string; page: number; negated: boolean;
   prompt: string; statements: Statement[];
 };
-type Review = {
-  attempts: number; statementCorrect: number; statementTotal: number;
-  due: number; interval: number; ease: number; lastScore: number; lastReviewed: number;
-};
-type ReviewMap = Record<string, Review>;
 type Tab = "study" | "progress" | "guide";
 type Rating = "again" | "hard" | "good" | "easy";
 
 const QUESTIONS = rawQuestions as Question[];
 const DAY = 86_400_000;
-const STORAGE_KEY = "ml4t-recall-progress-v1";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("study");
-  const [reviews, setReviews] = useState<ReviewMap>({});
-  const [hydrated, setHydrated] = useState(false);
+  const {
+    reviews, hydrated, user, syncStatus, saveReview, resetReviews,
+    requestMagicLink, signInWithGoogle, signOut,
+  } = useProgressSync(questionKeys);
   const [session, setSession] = useState<number[]>(() => Array.from({ length: 20 }, (_, index) => index));
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
@@ -38,22 +37,14 @@ export default function Home() {
   const [domainFilter, setDomainFilter] = useState("all");
   const [sessionSize, setSessionSize] = useState(20);
   const [now, setNow] = useState(0);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
 
   useEffect(() => {
-    queueMicrotask(() => {
-      try {
-        const saved = window.localStorage.getItem(STORAGE_KEY);
-        if (saved) setReviews(JSON.parse(saved));
-      } catch { /* device storage may be unavailable */ }
-      setNow(Date.now());
-      setHydrated(true);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(reviews)); } catch { /* no-op */ }
-  }, [reviews, hydrated]);
+    if (hydrated) queueMicrotask(() => setNow(Date.now()));
+  }, [hydrated]);
 
   const question = QUESTIONS[session[current] ?? 0];
   const result = useMemo(() => question.statements.map((statement, index) => selected.includes(index) === statement.answer), [question, selected]);
@@ -112,27 +103,26 @@ export default function Home() {
     };
     const easeChange: Record<Rating, number> = { again: -0.2, hard: -0.1, good: 0, easy: 0.15 };
     const interval = intervals[rating];
-    setReviews((items) => ({
-      ...items,
-      [question.id]: {
-        attempts: (previous?.attempts ?? 0) + 1,
-        statementCorrect: (previous?.statementCorrect ?? 0) + resultCount,
-        statementTotal: (previous?.statementTotal ?? 0) + 5,
-        due: Date.now() + interval * DAY,
-        interval,
-        ease: Math.max(1.3, Math.min(3, (previous?.ease ?? 2.5) + easeChange[rating])),
-        lastScore: resultCount,
-        lastReviewed: Date.now(),
-      },
-    }));
-    setNow(Date.now());
+    const reviewedAt = Date.now();
+    const review: Review = {
+      attempts: (previous?.attempts ?? 0) + 1,
+      statementCorrect: (previous?.statementCorrect ?? 0) + resultCount,
+      statementTotal: (previous?.statementTotal ?? 0) + 5,
+      due: reviewedAt + interval * DAY,
+      interval,
+      ease: Math.max(1.3, Math.min(3, (previous?.ease ?? 2.5) + easeChange[rating])),
+      lastScore: resultCount,
+      lastReviewed: reviewedAt,
+    };
+    saveReview(question.id, review);
+    setNow(reviewedAt);
     if (current + 1 >= session.length) setSessionDone(true);
     else { setCurrent((value) => value + 1); setSelected([]); setRevealed(false); }
-  }, [current, question.id, resultCount, reviews, session.length]);
+  }, [current, question.id, resultCount, reviews, saveReview, session.length]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (setupOpen || tab !== "study" || sessionDone) return;
+      if (setupOpen || authOpen || tab !== "study" || sessionDone) return;
       if (!revealed && /^[1-5]$/.test(event.key)) {
         const index = Number(event.key) - 1;
         setSelected((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index]);
@@ -145,7 +135,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [checkAnswer, rate, revealed, sessionDone, setupOpen, tab]);
+  }, [authOpen, checkAnswer, rate, revealed, sessionDone, setupOpen, tab]);
 
   const domainStats = useMemo(() => {
     const rows = new Map<string, { label: string; area: string; reviewed: number; correct: number; total: number; due: number }>();
@@ -160,8 +150,31 @@ export default function Home() {
   }, [reviews, now]);
 
   const resetProgress = () => {
-    if (window.confirm("Reset all device-local review history? This cannot be undone.")) setReviews({});
+    const scope = user ? "synced review history on every device" : "device-local review history";
+    if (window.confirm(`Reset all ${scope}? This cannot be undone.`)) void resetReviews();
   };
+
+  const sendMagicLink = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    const error = await requestMagicLink(email.trim());
+    setAuthMessage(error ?? "Check your email for a secure sign-in link.");
+    setAuthBusy(false);
+  };
+
+  const continueWithGoogle = async () => {
+    setAuthBusy(true);
+    const error = await signInWithGoogle();
+    if (error) { setAuthMessage(error); setAuthBusy(false); }
+  };
+
+  const syncLabel = syncStatus === "syncing"
+    ? "Syncing"
+    : syncStatus === "offline"
+      ? "Saved offline"
+      : syncStatus === "synced"
+        ? "Cloud synced"
+        : "On this device";
 
   return (
     <main className="app-shell">
@@ -178,7 +191,7 @@ export default function Home() {
         <div className="sidebar-stats">
           <span>{reviewedCount}<small>seen</small></span><span>{dueCount}<small>available</small></span>
         </div>
-        <div className="sidebar-note"><span className="status-dot" /><p><strong>Rev. 08.10.2026</strong><br />938 published questions loaded</p></div>
+        <div className="sidebar-note"><span className={`status-dot ${syncStatus}`} /><p><strong>{syncLabel}</strong><br />938 published questions loaded</p></div>
       </aside>
 
       <section className="workspace">
@@ -187,7 +200,17 @@ export default function Home() {
             <span className="eyebrow">{tab === "study" ? "Active recall" : tab === "progress" ? "Your learning signal" : "Pages 4–7 distilled"}</span>
             <h1>{tab === "study" ? "Know why, not just what." : tab === "progress" ? "Find the weak spots." : "Use the pool deliberately."}</h1>
           </div>
-          <button className="new-session" onClick={() => setSetupOpen(true)}>New session <span>＋</span></button>
+          <div className="topbar-actions">
+            {user ? (
+              <div className="account-chip">
+                <span><strong>{user.email}</strong><small>{syncLabel}</small></span>
+                <button onClick={() => void signOut()}>Sign out</button>
+              </div>
+            ) : (
+              <button className="sync-button" onClick={() => { setAuthMessage(""); setAuthOpen(true); }}>Sync progress</button>
+            )}
+            <button className="new-session" onClick={() => setSetupOpen(true)}>New session <span>＋</span></button>
+          </div>
         </header>
 
         {tab === "study" && !sessionDone && (
@@ -262,7 +285,7 @@ export default function Home() {
               <article><span>Questions seen</span><strong>{reviewedCount}</strong><small>of {QUESTIONS.length}</small></article>
               <article><span>Statement accuracy</span><strong>{overallAccuracy || "—"}{overallAccuracy ? "%" : ""}</strong><small>across all attempts</small></article>
               <article><span>Available now</span><strong>{dueCount}</strong><small>new and ready-to-revisit questions</small></article>
-              <article><span>Pool coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>device-local progress</small></article>
+              <article><span>Pool coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{user ? "synced across devices" : "device-local progress"}</small></article>
             </div>
             <div className="domain-table-card">
               <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest confidence first</h2></div><button className="text-button" onClick={resetProgress}>Reset progress</button></div>
@@ -308,6 +331,23 @@ export default function Home() {
             <fieldset><legend>Questions</legend><div className="segmented compact">{[10,20,50].map((size) => <button key={size} className={sessionSize === size ? "selected" : ""} onClick={() => setSessionSize(size)}>{size}</button>)}</div></fieldset>
             <div className="modal-note"><span>↻</span><p><strong>Available-first sequencing</strong><br />New and ready-to-revisit questions appear before recently reviewed ones.</p></div>
             <button className="start-button" onClick={startSession}>Start session <span>→</span></button>
+          </section>
+        </div>
+      )}
+
+      {authOpen && !user && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAuthOpen(false); }}>
+          <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+            <div className="modal-head"><div><span className="eyebrow">Optional cloud sync</span><h2 id="auth-title">Study anywhere.</h2></div><button aria-label="Close" onClick={() => setAuthOpen(false)}>×</button></div>
+            <p className="auth-intro">Keep studying without an account, or sign in to merge this device&apos;s progress and sync it across devices.</p>
+            <button className="google-button" disabled={authBusy} onClick={() => void continueWithGoogle()}><span>G</span> Continue with Google</button>
+            <div className="auth-divider"><span>or use a magic link</span></div>
+            <form onSubmit={(event) => void sendMagicLink(event)}>
+              <label>Email address<input required type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+              <button className="start-button" disabled={authBusy || !email.trim()}>{authBusy ? "Sending…" : "Email me a sign-in link"}<span>→</span></button>
+            </form>
+            {authMessage && <p className="auth-message" role="status">{authMessage}</p>}
+            <p className="auth-footnote">Supabase stores only your account and compact per-question progress. Question text and answer keys stay bundled in this app.</p>
           </section>
         </div>
       )}
