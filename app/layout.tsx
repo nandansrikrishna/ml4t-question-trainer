@@ -12,8 +12,18 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
+const deploymentUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+  process.env.VERCEL_URL ??
+  'http://localhost:3000';
+
+const metadataBase = new URL(
+  deploymentUrl.startsWith('http') ? deploymentUrl : `https://${deploymentUrl}`,
+);
+
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.SITE_ORIGIN ?? 'http://localhost:3000'),
+  metadataBase,
   title: 'ML4T Recall — CS 7646 Question Pool Trainer',
   description: 'Practice the authoritative ML4T exam question pool with multi-select review and spaced repetition.',
   openGraph: {
