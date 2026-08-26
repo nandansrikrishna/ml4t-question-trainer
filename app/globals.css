@@ -13,7 +13,7 @@ button { color:inherit; }
 .app-shell { min-height:100vh; display:grid; grid-template-columns:250px 1fr; }
 .sidebar { min-height:100vh; background:var(--ink); color:#fff; padding:34px 26px; display:flex; flex-direction:column; position:sticky; top:0; height:100vh; z-index:5; }
 .brand-lockup { display:flex; gap:12px; align-items:center; margin:0 0 72px; padding:0; border:0; background:transparent; color:#fff; text-align:left; cursor:pointer; }
-.brand-mark { width:42px; height:42px; display:grid; place-items:center; background:var(--acid); color:var(--ink); font-weight:900; border-radius:4px 14px 4px 4px; }
+.brand-mark { width:48px; height:48px; object-fit:contain; border-radius:12px; flex:0 0 auto; }
 .brand-words strong,.brand-words small { display:block; }
 .brand-words strong { font-size:15px; letter-spacing:-.02em; }
 .brand-words small { color:#94a29b; font-size:11px; margin-top:3px; }

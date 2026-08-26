@@ -24,19 +24,19 @@ const metadataBase = new URL(
 
 export const metadata: Metadata = {
   metadataBase,
-  title: 'ML4T Recall — CS 7646 Question Pool Trainer',
-  description: 'Practice the authoritative ML4T exam question pool with multi-select review and spaced repetition.',
+  title: 'ML4T Recall — CS 7646 Learning Companion',
+  description: 'Learn the concepts behind the ML4T exams through guided practice, explanations, and adaptive review.',
   openGraph: {
     title: 'ML4T Recall',
-    description: 'CS 7646 Question Pool Trainer',
+    description: 'A concept-first learning companion for CS 7646.',
     type: 'website',
-    images: [{ url: '/og.png', width: 1731, height: 909, alt: 'ML4T Recall — CS 7646 Question Pool Trainer' }],
+    images: [{ url: '/ml4t-learning-logo.png', width: 120, height: 120, alt: 'ML4T Recall learning app logo' }],
   },
   twitter: {
-    card: 'summary_large_image',
+    card: 'summary',
     title: 'ML4T Recall',
-    description: 'CS 7646 Question Pool Trainer',
-    images: ['/og.png'],
+    description: 'A concept-first learning companion for CS 7646.',
+    images: ['/ml4t-learning-logo.png'],
   },
 };
 

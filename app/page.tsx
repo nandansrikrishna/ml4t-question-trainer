@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Review } from "../lib/progress";
 import { useProgressSync } from "./use-progress-sync";
@@ -180,13 +181,13 @@ export default function Home() {
     <main className="app-shell">
       <aside className="sidebar">
         <button className="brand-lockup" onClick={() => setTab("study")} aria-label="ML4T Recall home">
-          <span className="brand-mark">76</span>
-          <span className="brand-words"><strong>ML4T Recall</strong><small>Question pool trainer</small></span>
+          <Image className="brand-mark" src="/ml4t-learning-logo.png" alt="" width={48} height={48} />
+          <span className="brand-words"><strong>ML4T Recall</strong><small>Concept learning companion</small></span>
         </button>
         <nav aria-label="Primary navigation">
           <button className={`nav-item ${tab === "study" ? "active" : ""}`} onClick={() => setTab("study")}><span>01</span> Study</button>
           <button className={`nav-item ${tab === "progress" ? "active" : ""}`} onClick={() => setTab("progress")}><span>02</span> Progress</button>
-          <button className={`nav-item ${tab === "guide" ? "active" : ""}`} onClick={() => setTab("guide")}><span>03</span> Pool guide</button>
+          <button className={`nav-item ${tab === "guide" ? "active" : ""}`} onClick={() => setTab("guide")}><span>03</span> Learning guide</button>
         </nav>
         <div className="sidebar-stats">
           <span>{reviewedCount}<small>seen</small></span><span>{dueCount}<small>available</small></span>
@@ -197,8 +198,8 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{tab === "study" ? "Active recall" : tab === "progress" ? "Your learning signal" : "Pages 4–7 distilled"}</span>
-            <h1>{tab === "study" ? "Know why, not just what." : tab === "progress" ? "Find the weak spots." : "Use the pool deliberately."}</h1>
+            <span className="eyebrow">{tab === "study" ? "Guided concept practice" : tab === "progress" ? "Your learning signal" : "Pages 4–7 distilled"}</span>
+            <h1>{tab === "study" ? "Know why, not just what." : tab === "progress" ? "Find the weak spots." : "Learn from every question."}</h1>
           </div>
           <div className="topbar-actions">
             {user ? (
@@ -263,7 +264,7 @@ export default function Home() {
             <aside className="session-panel">
               <span className="eyebrow">This session</span>
               <div className="score-ring" style={{ "--score": `${sessionAccuracy || 0}%` } as React.CSSProperties}><strong>{sessionStatements ? `${sessionAccuracy}%` : "—"}</strong><span>accuracy</span></div>
-              <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Statements</dt><dd>{sessionStatements}</dd></div><div><dt>Pool available</dt><dd>{dueCount}</dd></div></dl>
+              <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Statements</dt><dd>{sessionStatements}</dd></div><div><dt>Ready to learn</dt><dd>{dueCount}</dd></div></dl>
               <div className="focus-box"><span>Current domain</span><strong>{question.domain}</strong><small>{question.area} · Exam {question.exam}</small></div>
               <p className="key-hint"><kbd>1–5</kbd> toggle · <kbd>Enter</kbd> check</p>
             </aside>
@@ -274,7 +275,7 @@ export default function Home() {
           <section className="completion-card">
             <span className="completion-mark">✓</span><span className="eyebrow">Session complete</span>
             <h2>{sessionAccuracy}% statement accuracy</h2>
-            <p>You reviewed {session.length} questions and scheduled every card by difficulty. Revisit the misses after their memory trace cools.</p>
+            <p>You worked through {session.length} questions and identified which concepts need another look. Revisit the explanations, then connect those ideas back to the course materials.</p>
             <div><button className="check-button" onClick={() => setSetupOpen(true)}>Build another session <span>→</span></button><button className="secondary-button" onClick={() => setTab("progress")}>View domain progress</button></div>
           </section>
         )}
@@ -285,7 +286,7 @@ export default function Home() {
               <article><span>Questions seen</span><strong>{reviewedCount}</strong><small>of {QUESTIONS.length}</small></article>
               <article><span>Statement accuracy</span><strong>{overallAccuracy || "—"}{overallAccuracy ? "%" : ""}</strong><small>across all attempts</small></article>
               <article><span>Available now</span><strong>{dueCount}</strong><small>new and ready-to-revisit questions</small></article>
-              <article><span>Pool coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{user ? "synced across devices" : "device-local progress"}</small></article>
+              <article><span>Learning coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{user ? "synced across devices" : "device-local progress"}</small></article>
             </div>
             <div className="domain-table-card">
               <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest confidence first</h2></div><button className="text-button" onClick={resetProgress}>Reset progress</button></div>
@@ -316,7 +317,7 @@ export default function Home() {
               <article className="authority-card"><span className="eyebrow">Single source of truth</span><h3>The current published wording and keyed answers are authoritative for grading.</h3><p>Exam answer order may change, and some items may appear as direct negations. Suspected errors should be raised through the designated course channel before the exam.</p></article>
               <article className="ai-card"><span>PREP ONLY</span><h3>AI can be a study partner—not an exam partner.</h3><p>Use it to explain, compare, critique, or generate analogous practice. Verify explanations against the course materials and pool. Generative AI is prohibited during an active exam.</p></article>
             </div>
-            <p className="source-line">Built from all 938 questions in <strong>ML4T Exam Question Pool</strong>, revision 08.10.2026. This trainer is a study interface, not a replacement for lectures, readings, projects, or course announcements.</p>
+            <p className="source-line">Built from all 938 questions in <strong>ML4T Exam Question Pool</strong>, revision 08.10.2026. This learning companion supports—but does not replace—lectures, readings, projects, or course announcements.</p>
           </section>
         )}
       </section>
