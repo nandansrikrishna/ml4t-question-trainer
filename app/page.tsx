@@ -1,6 +1,19 @@
 "use client";
 
 import Image from "next/image";
+import {
+  ArrowRight,
+  BookMarked,
+  BookOpen,
+  ChartBar,
+  Check,
+  Cloud,
+  LogOut,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Review } from "../lib/progress";
 import { useProgressSync } from "./use-progress-sync";
@@ -123,6 +136,11 @@ export default function Home() {
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (setupOpen) setSetupOpen(false);
+        if (authOpen) setAuthOpen(false);
+        return;
+      }
       if (setupOpen || authOpen || tab !== "study" || sessionDone) return;
       if (!revealed && /^[1-5]$/.test(event.key)) {
         const index = Number(event.key) - 1;
@@ -185,32 +203,33 @@ export default function Home() {
           <span className="brand-words"><strong>ML4T Recall</strong><small>Concept learning companion</small></span>
         </button>
         <nav aria-label="Primary navigation">
-          <button className={`nav-item ${tab === "study" ? "active" : ""}`} onClick={() => setTab("study")}><span>01</span> Study</button>
-          <button className={`nav-item ${tab === "progress" ? "active" : ""}`} onClick={() => setTab("progress")}><span>02</span> Progress</button>
-          <button className={`nav-item ${tab === "guide" ? "active" : ""}`} onClick={() => setTab("guide")}><span>03</span> Learning guide</button>
+          <button className={`nav-item ${tab === "study" ? "active" : ""}`} aria-current={tab === "study" ? "page" : undefined} onClick={() => setTab("study")}><BookOpen aria-hidden="true" /> Study</button>
+          <button className={`nav-item ${tab === "progress" ? "active" : ""}`} aria-current={tab === "progress" ? "page" : undefined} onClick={() => setTab("progress")}><ChartBar aria-hidden="true" /> Progress</button>
+          <button className={`nav-item ${tab === "guide" ? "active" : ""}`} aria-current={tab === "guide" ? "page" : undefined} onClick={() => setTab("guide")}><BookMarked aria-hidden="true" /> Learning guide</button>
         </nav>
         <div className="sidebar-stats">
-          <span>{reviewedCount}<small>seen</small></span><span>{dueCount}<small>available</small></span>
+          <span>{reviewedCount}<small>seen</small></span><span>{dueCount}<small>ready</small></span>
         </div>
-        <div className="sidebar-note"><span className={`status-dot ${syncStatus}`} /><p><strong>{syncLabel}</strong><br />938 published questions loaded</p></div>
+        <div className="sidebar-note"><span className={`status-dot ${syncStatus}`} /><p><strong>{syncLabel}</strong><br />{QUESTIONS.length} questions in your library</p></div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
           <div>
-            {tab !== "study" && <span className="eyebrow">{tab === "progress" ? "Your learning signal" : "Pages 4–7 distilled"}</span>}
-            <h1>{tab === "study" ? "Know why, not just what." : tab === "progress" ? "Find the weak spots." : "Learn from every question."}</h1>
+            <span className="eyebrow">{tab === "study" ? "Study session" : tab === "progress" ? "Learning signal" : "How to use the pool"}</span>
+            <h1>{tab === "study" ? "Practice with intent." : tab === "progress" ? "See what needs attention." : "Make every question useful."}</h1>
+            <p className="topbar-subtitle">{tab === "study" ? "Judge each claim, then learn from the reasoning." : tab === "progress" ? "Coverage and confidence, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
           </div>
           <div className="topbar-actions">
             {user ? (
               <div className="account-chip">
                 <span><strong>{user.email}</strong><small>{syncLabel}</small></span>
-                <button onClick={() => void signOut()}>Sign out</button>
+                <button onClick={() => void signOut()}><LogOut aria-hidden="true" /> Sign out</button>
               </div>
             ) : (
-              <button className="sync-button" onClick={() => { setAuthMessage(""); setAuthOpen(true); }}>Sync progress</button>
+              <button className="sync-button" onClick={() => { setAuthMessage(""); setAuthOpen(true); }}><Cloud aria-hidden="true" /> Sync progress</button>
             )}
-            <button className="new-session" onClick={() => setSetupOpen(true)}>New session <span>＋</span></button>
+            <button className="new-session" onClick={() => setSetupOpen(true)}>New session <Plus aria-hidden="true" /></button>
           </div>
         </header>
 
@@ -239,7 +258,7 @@ export default function Home() {
                         aria-pressed={isSelected}
                       >
                         <span className="letter">{statement.label}</span><span>{statement.text}</span>
-                        <span className="check">{revealed ? (isCorrect ? "✓" : "×") : isSelected ? "✓" : ""}</span>
+                        <span className="check">{revealed ? (isCorrect ? <Check aria-hidden="true" /> : <X aria-hidden="true" />) : isSelected ? <Check aria-hidden="true" /> : null}</span>
                       </button>
                       {revealed && <div className="explanation"><strong>{statement.answer ? "TRUE" : "FALSE"}</strong><p>{statement.explanation}</p></div>}
                     </div>
@@ -247,7 +266,7 @@ export default function Home() {
                 })}
               </div>
               {!revealed ? (
-                <div className="question-actions"><button className="skip-button" onClick={() => rate("again")}>Skip for now</button><button className="check-button" onClick={checkAnswer}>Check all 5 statements <span>→</span></button></div>
+                <div className="question-actions"><button className="skip-button" onClick={() => rate("again")}>Skip for now</button><button className="check-button" onClick={checkAnswer}>Check all 5 statements <ArrowRight aria-hidden="true" /></button></div>
               ) : (
                 <div className="rating-panel">
                   <div><span className="rating-score">{resultCount}/5</span><p>{resultCount === 5 ? "Exact match. Can you explain each one?" : "Review the reasoning, then schedule the revisit."}</p></div>
@@ -273,10 +292,10 @@ export default function Home() {
 
         {tab === "study" && sessionDone && (
           <section className="completion-card">
-            <span className="completion-mark">✓</span><span className="eyebrow">Session complete</span>
+            <span className="completion-mark"><Check aria-hidden="true" /></span><span className="eyebrow">Session complete</span>
             <h2>{sessionAccuracy}% statement accuracy</h2>
             <p>You worked through {session.length} questions and identified which concepts need another look. Revisit the explanations, then connect those ideas back to the course materials.</p>
-            <div><button className="check-button" onClick={() => setSetupOpen(true)}>Build another session <span>→</span></button><button className="secondary-button" onClick={() => setTab("progress")}>View domain progress</button></div>
+            <div><button className="check-button" onClick={() => setSetupOpen(true)}>Build another session <ArrowRight aria-hidden="true" /></button><button className="secondary-button" onClick={() => setTab("progress")}>View domain progress</button></div>
           </section>
         )}
 
@@ -289,7 +308,7 @@ export default function Home() {
               <article><span>Learning coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{user ? "synced across devices" : "device-local progress"}</small></article>
             </div>
             <div className="domain-table-card">
-              <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest confidence first</h2></div><button className="text-button" onClick={resetProgress}>Reset progress</button></div>
+              <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest confidence first</h2></div><button className="text-button" onClick={resetProgress}><RotateCcw aria-hidden="true" /> Reset progress</button></div>
               <div className="domain-table">
                 {domainStats.map((row) => {
                   const rowAccuracy = row.total ? Math.round((row.correct / row.total) * 100) : 0;
@@ -325,13 +344,13 @@ export default function Home() {
       {setupOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSetupOpen(false); }}>
           <section className="session-modal" role="dialog" aria-modal="true" aria-labelledby="session-title">
-            <div className="modal-head"><div><span className="eyebrow">Custom deck</span><h2 id="session-title">Build a focused session</h2></div><button aria-label="Close" onClick={() => setSetupOpen(false)}>×</button></div>
+            <div className="modal-head"><div><span className="eyebrow">Custom deck</span><h2 id="session-title">Build a focused session</h2></div><button aria-label="Close" onClick={() => setSetupOpen(false)}><X aria-hidden="true" /></button></div>
             <fieldset><legend>Exam</legend><div className="segmented">{[["all","Both"],["1","Exam 1"],["2","Exam 2"]].map(([value,label]) => <button key={value} className={examFilter === value ? "selected" : ""} onClick={() => { setExamFilter(value); setDomainFilter("all"); }}>{label}</button>)}</div></fieldset>
             <fieldset><legend>Knowledge area</legend><div className="segmented">{[["all","Mixed"],["Machine Learning","Machine Learning"],["Quantitative Finance","Quant Finance"]].map(([value,label]) => <button key={value} className={areaFilter === value ? "selected" : ""} onClick={() => { setAreaFilter(value); setDomainFilter("all"); }}>{label}</button>)}</div></fieldset>
             <label className="select-label">Domain<select value={domainFilter} onChange={(event) => setDomainFilter(event.target.value)}><option value="all">All matching domains</option>{domainOptions.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
             <fieldset><legend>Questions</legend><div className="segmented compact">{[10,20,50].map((size) => <button key={size} className={sessionSize === size ? "selected" : ""} onClick={() => setSessionSize(size)}>{size}</button>)}</div></fieldset>
-            <div className="modal-note"><span>↻</span><p><strong>Available-first sequencing</strong><br />New and ready-to-revisit questions appear before recently reviewed ones.</p></div>
-            <button className="start-button" onClick={startSession}>Start session <span>→</span></button>
+            <div className="modal-note"><span><Sparkles aria-hidden="true" /></span><p><strong>Available-first sequencing</strong><br />New and ready-to-revisit questions appear before recently reviewed ones.</p></div>
+            <button className="start-button" onClick={startSession}>Start session <ArrowRight aria-hidden="true" /></button>
           </section>
         </div>
       )}
@@ -339,13 +358,13 @@ export default function Home() {
       {authOpen && !user && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAuthOpen(false); }}>
           <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-            <div className="modal-head"><div><span className="eyebrow">Optional cloud sync</span><h2 id="auth-title">Study anywhere.</h2></div><button aria-label="Close" onClick={() => setAuthOpen(false)}>×</button></div>
+            <div className="modal-head"><div><span className="eyebrow">Optional cloud sync</span><h2 id="auth-title">Study anywhere.</h2></div><button aria-label="Close" onClick={() => setAuthOpen(false)}><X aria-hidden="true" /></button></div>
             <p className="auth-intro">Keep studying without an account, or sign in to merge this device&apos;s progress and sync it across devices.</p>
             <button className="google-button" disabled={authBusy} onClick={() => void continueWithGoogle()}><span>G</span> Continue with Google</button>
             <div className="auth-divider"><span>or use a magic link</span></div>
             <form onSubmit={(event) => void sendMagicLink(event)}>
               <label>Email address<input required type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-              <button className="start-button" disabled={authBusy || !email.trim()}>{authBusy ? "Sending…" : "Email me a sign-in link"}<span>→</span></button>
+              <button className="start-button" disabled={authBusy || !email.trim()}>{authBusy ? "Sending…" : "Email me a sign-in link"}<ArrowRight aria-hidden="true" /></button>
             </form>
             {authMessage && <p className="auth-message" role="status">{authMessage}</p>}
             <p className="auth-footnote">Supabase stores only your account and compact per-question progress. Question text and answer keys stay bundled in this app.</p>
