@@ -34,6 +34,7 @@ nav { display:grid; gap:9px; }
 .topbar { display:flex; align-items:end; justify-content:space-between; gap:24px; margin:0 auto 36px; max-width:1180px; }
 .eyebrow { text-transform:uppercase; font-family:var(--font-geist-mono); letter-spacing:.14em; font-size:10px; font-weight:700; color:var(--green); }
 .topbar h1 { margin:8px 0 0; font-size:clamp(28px,3vw,46px); line-height:.98; letter-spacing:-.05em; }
+.topbar h1:first-child { margin-top:0; }
 .topbar-actions { display:flex;align-items:center;gap:11px; }
 .new-session { border:1px solid var(--ink); background:transparent; padding:11px 14px 11px 17px; border-radius:8px; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; box-shadow:3px 3px 0 var(--ink); }
 .new-session:hover { background:#fff; }.new-session span { margin-left:12px; }

@@ -198,7 +198,7 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{tab === "study" ? "Guided concept practice" : tab === "progress" ? "Your learning signal" : "Pages 4–7 distilled"}</span>
+            {tab !== "study" && <span className="eyebrow">{tab === "progress" ? "Your learning signal" : "Pages 4–7 distilled"}</span>}
             <h1>{tab === "study" ? "Know why, not just what." : tab === "progress" ? "Find the weak spots." : "Learn from every question."}</h1>
           </div>
           <div className="topbar-actions">
