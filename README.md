@@ -43,11 +43,13 @@ npx supabase@2.115.0 db reset
 ```
 
 Email magic links use `/auth/callback`. In the hosted Supabase Auth URL
-configuration, allow both `http://localhost:3000/auth/callback` and the
-production callback URL. Hosted Google sign-in uses the **ML4T Recall Web**
-OAuth client in the `ml4t-recall` Google Cloud project. Its authorized origins
-are `https://ml4t-question-trainer.vercel.app` and
-`http://localhost:3000`; its redirect URI is
+configuration, set the Site URL to `https://www.ml4t.study` and allow
+`https://www.ml4t.study/auth/callback`,
+`https://ml4t.study/auth/callback`,
+`https://ml4t-question-trainer.vercel.app/auth/callback`, and
+`http://localhost:3000/auth/callback` as exact redirect URLs. Hosted Google
+sign-in uses the **ML4T Recall Web** OAuth client in the `ml4t-recall` Google
+Cloud project. Its redirect URI is
 `https://dwwktivwkkcbjzqrrjdx.supabase.co/auth/v1/callback`. The client secret
 is stored only in Google Cloud and Supabase's provider configuration—it must
 never be added to this repository or a `NEXT_PUBLIC_` variable.
