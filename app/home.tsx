@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import katex from "katex";
 import {
   ArrowRight,
   BookMarked,
@@ -16,7 +17,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { DAILY_EXAM, getDailyDateKey, getDailyQuestionIndexes } from "../lib/daily-questions";
 import type { Review } from "../lib/progress";
 import { useProgressSync } from "./use-progress-sync";
@@ -34,6 +35,36 @@ type Rating = "again" | "hard" | "good" | "easy";
 
 const QUESTIONS = rawQuestions as Question[];
 const DAY = 86_400_000;
+const MATH_DELIMITER = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
+
+const MathText = memo(function MathText({ text }: { text: string }) {
+  return text.split(MATH_DELIMITER).map((part, index) => {
+    const displayMode = part.startsWith("\\[") && part.endsWith("\\]");
+    const inlineMode = part.startsWith("\\(") && part.endsWith("\\)");
+
+    if (!displayMode && !inlineMode) {
+      return part;
+    }
+
+    const expression = part.slice(2, -2);
+    const html = katex.renderToString(expression, {
+      displayMode,
+      output: "htmlAndMathml",
+      strict: "warn",
+      throwOnError: false,
+      trust: false,
+    });
+
+    return (
+      <span
+        className={displayMode ? "math-display" : "math-inline"}
+        // KaTeX escapes untrusted commands and emits accessible MathML alongside HTML.
+        dangerouslySetInnerHTML={{ __html: html }}
+        key={`${index}-${expression}`}
+      />
+    );
+  });
+});
 
 export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const pathname = usePathname();
@@ -277,7 +308,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
                 <div><p className="counter">Question {current + 1} of {session.length}</p><h2>{question.group}</h2></div>
                 {question.negated && <span className="reverse-badge">Reverse-key item</span>}
               </div>
-              <p className="scenario">{question.prompt}</p>
+              <p className="scenario"><MathText text={question.prompt} /></p>
               {!question.negated && <p className="instruction">Select every statement you judge to be <strong>True</strong>. Unselected statements count as False.</p>}
               {question.negated && <p className="instruction warning">Read carefully: this item asks you to mark inaccurate statements <strong>True</strong>.</p>}
               <div className="statement-list">
@@ -292,10 +323,10 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
                         onClick={() => setSelected((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index])}
                         aria-pressed={isSelected}
                       >
-                        <span className="letter">{statement.label}</span><span>{statement.text}</span>
+                        <span className="letter">{statement.label}</span><span><MathText text={statement.text} /></span>
                         <span className="check">{revealed ? (isCorrect ? <Check aria-hidden="true" /> : <X aria-hidden="true" />) : isSelected ? <Check aria-hidden="true" /> : null}</span>
                       </button>
-                      {revealed && <div className="explanation"><strong>{statement.answer ? "TRUE" : "FALSE"}</strong><p>{statement.explanation}</p></div>}
+                      {revealed && <div className="explanation"><strong>{statement.answer ? "TRUE" : "FALSE"}</strong><p><MathText text={statement.explanation} /></p></div>}
                     </div>
                   );
                 })}

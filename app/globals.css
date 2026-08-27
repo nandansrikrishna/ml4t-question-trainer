@@ -184,6 +184,9 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .explanation strong { padding-top: 2px; color: var(--primary); font-family: var(--font-geist-mono); font-size: 8px; letter-spacing: .08em; }
 .incorrect .explanation strong { color: var(--destructive); }
 .explanation p { margin: 0; color: #56625c; font-size: 10px; line-height: 1.55; }
+.math-inline .katex { font-size: 1.05em; }
+.math-display { display: block; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 2px 0; text-align: center; }
+.math-display .katex-display { margin: .65em 0; }
 .question-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
 .skip-button { padding: 8px 2px; border: 0; background: transparent; color: var(--muted-foreground); font-size: 10px; font-weight: 560; }
 .skip-button:hover { color: var(--foreground); }
