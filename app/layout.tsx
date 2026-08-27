@@ -31,13 +31,18 @@ export const metadata: Metadata = {
     title: 'ML4T Recall',
     description: 'A concept-first learning companion for CS 7646.',
     type: 'website',
-    images: [{ url: '/ml4t-learning-logo.png', width: 120, height: 120, alt: 'ML4T Recall learning app logo' }],
+    images: [{
+      url: '/ml4t-recall-share.png',
+      width: 1200,
+      height: 630,
+      alt: 'ML4T Recall — master the concepts behind Machine Learning for Trading',
+    }],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'ML4T Recall',
     description: 'A concept-first learning companion for CS 7646.',
-    images: ['/ml4t-learning-logo.png'],
+    images: ['/ml4t-recall-share.png'],
   },
 };
 
