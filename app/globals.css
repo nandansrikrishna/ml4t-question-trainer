@@ -42,7 +42,7 @@ body {
 button, a, select, input { font: inherit; }
 button { color: inherit; }
 button, select, input { outline: none; }
-button:focus-visible, select:focus-visible, input:focus-visible {
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 22%, transparent);
   border-color: var(--ring) !important;
 }
@@ -70,7 +70,9 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
   padding: 0;
   border: 0;
   background: transparent;
+  color: inherit;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
 .brand-mark { width: 40px; height: 40px; object-fit: contain; border: 1px solid var(--border); border-radius: 11px; box-shadow: var(--shadow-sm); }
@@ -89,6 +91,7 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
   background: transparent;
   color: var(--muted-foreground);
   text-align: left;
+  text-decoration: none;
   font-size: 13px;
   font-weight: 540;
   cursor: pointer;
@@ -223,7 +226,7 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .completion-card h2 { margin: 9px 0 12px; font-size: 36px; font-weight: 630; letter-spacing: -.045em; }
 .completion-card p { max-width: 520px; margin: 0 auto 25px; color: var(--muted-foreground); font-size: 12px; line-height: 1.65; }
 .completion-card > div { display: flex; justify-content: center; gap: 10px; }
-.secondary-button { min-height: 39px; padding: 0 15px; border: 1px solid var(--border); border-radius: 9px; background: var(--card); font-size: 10px; font-weight: 620; }
+.secondary-button { min-height: 39px; padding: 0 15px; border: 1px solid var(--border); border-radius: 9px; background: var(--card); color: inherit; font-size: 10px; font-weight: 620; text-decoration: none; }
 .secondary-button:hover { border-color: #bdc4bd; background: #fbfcfa; }
 
 .progress-view, .guide-view { max-width: 1240px; margin: auto; animation: view-in 320ms var(--ease-out) both; }

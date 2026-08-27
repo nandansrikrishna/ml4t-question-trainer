@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowRight,
   BookMarked,
@@ -34,7 +36,9 @@ const QUESTIONS = rawQuestions as Question[];
 const DAY = 86_400_000;
 
 export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
-  const [tab, setTab] = useState<Tab>("study");
+  const pathname = usePathname();
+  const router = useRouter();
+  const tab: Tab = pathname === "/progress" ? "progress" : pathname === "/learning-guide" ? "guide" : "study";
   const {
     reviews, hydrated, user, syncStatus, saveReview, resetReviews,
     requestMagicLink, signInWithGoogle, signOut,
@@ -119,7 +123,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     setSessionKind("custom");
     setDailyReplayStarted(false);
     setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
-    setSessionCorrect(0); setSessionStatements(0); setSetupOpen(false); setTab("study");
+    setSessionCorrect(0); setSessionStatements(0); setSetupOpen(false); router.push("/");
   };
 
   const restartDaily = () => {
@@ -127,7 +131,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     setSessionKind("daily");
     setDailyReplayStarted(true);
     setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
-    setSessionCorrect(0); setSessionStatements(0); setTab("study");
+    setSessionCorrect(0); setSessionStatements(0); router.push("/");
   };
 
   const checkAnswer = useCallback(() => {
@@ -229,14 +233,14 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <button className="brand-lockup" onClick={() => setTab("study")} aria-label="ML4T Recall home">
+        <Link className="brand-lockup" href="/" aria-label="ML4T Recall home">
           <Image className="brand-mark" src="/ml4t-learning-logo.png" alt="" width={48} height={48} />
           <span className="brand-words"><strong>ML4T Recall</strong><small>Concept learning companion</small></span>
-        </button>
+        </Link>
         <nav aria-label="Primary navigation">
-          <button className={`nav-item ${tab === "study" ? "active" : ""}`} aria-current={tab === "study" ? "page" : undefined} onClick={() => setTab("study")}><BookOpen aria-hidden="true" /> Study</button>
-          <button className={`nav-item ${tab === "progress" ? "active" : ""}`} aria-current={tab === "progress" ? "page" : undefined} onClick={() => setTab("progress")}><ChartBar aria-hidden="true" /> Progress</button>
-          <button className={`nav-item ${tab === "guide" ? "active" : ""}`} aria-current={tab === "guide" ? "page" : undefined} onClick={() => setTab("guide")}><BookMarked aria-hidden="true" /> Learning guide</button>
+          <Link className={`nav-item ${tab === "study" ? "active" : ""}`} aria-current={tab === "study" ? "page" : undefined} href="/"><BookOpen aria-hidden="true" /> Study</Link>
+          <Link className={`nav-item ${tab === "progress" ? "active" : ""}`} aria-current={tab === "progress" ? "page" : undefined} href="/progress"><ChartBar aria-hidden="true" /> Progress</Link>
+          <Link className={`nav-item ${tab === "guide" ? "active" : ""}`} aria-current={tab === "guide" ? "page" : undefined} href="/learning-guide"><BookMarked aria-hidden="true" /> Learning guide</Link>
         </nav>
         <div className="sidebar-stats">
           <span>{reviewedCount}<small>seen</small></span><span>{dueCount}<small>ready</small></span>
@@ -327,9 +331,9 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             <h2>{sessionAccuracy}% statement accuracy</h2>
             <p>{sessionKind === "daily" ? `You completed today’s shared Exam ${DAILY_EXAM} set. Your results are saved to your own progress history.` : `You worked through ${session.length} questions and identified which concepts need another look. Revisit the explanations, then connect those ideas back to the course materials.`}</p>
             {sessionKind === "daily" ? (
-              <div><button className="check-button" onClick={restartDaily}><RotateCcw aria-hidden="true" /> Do Daily 5 again</button><button className="secondary-button" onClick={() => setSetupOpen(true)}>Build custom session</button><button className="secondary-button" onClick={() => setTab("progress")}>View progress</button></div>
+              <div><button className="check-button" onClick={restartDaily}><RotateCcw aria-hidden="true" /> Do Daily 5 again</button><button className="secondary-button" onClick={() => setSetupOpen(true)}>Build custom session</button><Link className="secondary-button" href="/progress">View progress</Link></div>
             ) : (
-              <div><button className="check-button" onClick={() => setSetupOpen(true)}>Build another session <ArrowRight aria-hidden="true" /></button><button className="secondary-button" onClick={() => setTab("progress")}>View domain progress</button></div>
+              <div><button className="check-button" onClick={() => setSetupOpen(true)}>Build another session <ArrowRight aria-hidden="true" /></button><Link className="secondary-button" href="/progress">View domain progress</Link></div>
             )}
           </section>
         )}
