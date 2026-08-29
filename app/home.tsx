@@ -23,6 +23,7 @@ import type { Review } from "../lib/progress";
 import { useProgressSync } from "./use-progress-sync";
 import questionKeys from "./data/question-keys.json";
 import rawQuestions from "./data/questions.json";
+import ThemeToggle from "./theme-toggle";
 
 type Statement = { label: string; text: string; answer: boolean; explanation: string };
 type Question = {
@@ -287,6 +288,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : "Judge each claim, then learn from the reasoning.") : tab === "progress" ? "Coverage and confidence, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
           </div>
           <div className="topbar-actions">
+            <ThemeToggle />
             {user ? (
               <div className="account-chip">
                 <span><strong>{user.email}</strong><small>{syncLabel}</small></span>
