@@ -11,6 +11,7 @@ import {
   ChartBar,
   Check,
   Cloud,
+  Layers3,
   LogOut,
   Plus,
   RotateCcw,
@@ -19,7 +20,13 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { DAILY_EXAM, getDailyDateKey, getDailyQuestionIndexes } from "../lib/daily-questions";
-import type { Review } from "../lib/progress";
+import {
+  buildDeckQueue,
+  formatInterval,
+  getNextInterval,
+  scheduleReview,
+  type ReviewRating,
+} from "../lib/spaced-repetition";
 import { useProgressSync } from "./use-progress-sync";
 import questionKeys from "./data/question-keys.json";
 import rawQuestions from "./data/questions.json";
@@ -31,11 +38,10 @@ type Question = {
   groupIndex: number; group: string; page: number; negated: boolean;
   prompt: string; statements: Statement[];
 };
-type Tab = "study" | "progress" | "guide";
-type Rating = "again" | "hard" | "good" | "easy";
+type Tab = "study" | "decks" | "progress" | "guide";
+type DeckFormat = "quiz" | "flashcards";
 
 const QUESTIONS = rawQuestions as Question[];
-const DAY = 86_400_000;
 const MATH_DELIMITER = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
 
 const MathText = memo(function MathText({ text }: { text: string }) {
@@ -70,14 +76,16 @@ const MathText = memo(function MathText({ text }: { text: string }) {
 export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const pathname = usePathname();
   const router = useRouter();
-  const tab: Tab = pathname === "/progress" ? "progress" : pathname === "/learning-guide" ? "guide" : "study";
+  const tab: Tab = pathname === "/decks" ? "decks" : pathname === "/progress" ? "progress" : pathname === "/learning-guide" ? "guide" : "study";
   const {
     reviews, hydrated, user, syncStatus, saveReview, resetReviews,
     requestMagicLink, signInWithGoogle, signOut,
   } = useProgressSync(questionKeys);
   const dailyQuestionIndexes = useMemo(() => getDailyQuestionIndexes(QUESTIONS, dailyDateKey), [dailyDateKey]);
   const [session, setSession] = useState<number[]>(() => dailyQuestionIndexes);
-  const [sessionKind, setSessionKind] = useState<"daily" | "custom">("daily");
+  const [sessionKind, setSessionKind] = useState<"daily" | "custom" | "deck">("daily");
+  const [activeDeck, setActiveDeck] = useState<1 | 2 | null>(null);
+  const [deckFormat, setDeckFormat] = useState<DeckFormat>("quiz");
   const [dailyReplayStarted, setDailyReplayStarted] = useState(false);
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
@@ -126,6 +134,22 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const overallAccuracy = totalStatements ? Math.round((totalCorrect / totalStatements) * 100) : 0;
   const dueCount = Object.values(reviews).filter((review) => review.due <= now).length + (QUESTIONS.length - reviewedCount);
   const sessionAccuracy = sessionStatements ? Math.round((sessionCorrect / sessionStatements) * 100) : 0;
+  const deckReviewActive = tab === "decks" && sessionKind === "deck" && activeDeck !== null;
+  const flashcardActive = deckReviewActive && deckFormat === "flashcards";
+  const practiceActive = tab === "study" || deckReviewActive;
+
+  const deckSummaries = useMemo(() => ([1, 2] as const).map((exam) => {
+    const cards = QUESTIONS.filter((item) => item.exam === exam);
+    const deckReviews = cards.flatMap((item) => reviews[item.id] ? [reviews[item.id]] : []);
+    const due = deckReviews.filter((review) => review.due <= now).length;
+
+    return {
+      exam,
+      total: cards.length,
+      due,
+      studied: deckReviews.length,
+    };
+  }), [now, reviews]);
 
   const domainOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -153,14 +177,44 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
       });
     setSession(candidates.slice(0, sessionSize).map(({ index }) => index));
     setSessionKind("custom");
+    setDeckFormat("quiz");
     setDailyReplayStarted(false);
     setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
     setSessionCorrect(0); setSessionStatements(0); setSetupOpen(false); router.push("/");
   };
 
+  const startDeck = (exam: 1 | 2, format: DeckFormat) => {
+    const cards = QUESTIONS.map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.exam === exam)
+      .map(({ item, index }) => ({ id: item.id, index }));
+    setSession(buildDeckQueue(cards, reviews, now));
+    setSessionKind("deck");
+    setActiveDeck(exam);
+    setDeckFormat(format);
+    setDailyReplayStarted(false);
+    setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
+    setSessionCorrect(0); setSessionStatements(0);
+  };
+
+  const openDaily = () => {
+    setSession(dailyQuestionIndexes);
+    setSessionKind("daily");
+    setActiveDeck(null);
+    setDeckFormat("quiz");
+    setDailyReplayStarted(false);
+    setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
+    setSessionCorrect(0); setSessionStatements(0);
+  };
+
+  const openDeckLibrary = () => {
+    setActiveDeck(null);
+    setSessionDone(false);
+  };
+
   const restartDaily = () => {
     setSession(dailyQuestionIndexes);
     setSessionKind("daily");
+    setDeckFormat("quiz");
     setDailyReplayStarted(true);
     setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
     setSessionCorrect(0); setSessionStatements(0); router.push("/");
@@ -173,33 +227,17 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     setSessionStatements((value) => value + 5);
   }, [revealed, resultCount, sessionDone]);
 
-  const rate = useCallback((rating: Rating, score = resultCount) => {
+  const rate = useCallback((rating: ReviewRating, score: number | null = resultCount) => {
     const previous = reviews[question.id];
-    const previousInterval = previous?.interval ?? 0;
-    const intervals: Record<Rating, number> = {
-      again: 0.0007,
-      hard: Math.max(1, previousInterval ? previousInterval * 1.2 : 1),
-      good: Math.max(2, previousInterval ? previousInterval * 2.5 : 2),
-      easy: Math.max(5, previousInterval ? previousInterval * 3.5 : 5),
-    };
-    const easeChange: Record<Rating, number> = { again: -0.2, hard: -0.1, good: 0, easy: 0.15 };
-    const interval = intervals[rating];
     const reviewedAt = Date.now();
-    const review: Review = {
-      attempts: (previous?.attempts ?? 0) + 1,
-      statementCorrect: (previous?.statementCorrect ?? 0) + score,
-      statementTotal: (previous?.statementTotal ?? 0) + 5,
-      due: reviewedAt + interval * DAY,
-      interval,
-      ease: Math.max(1.3, Math.min(3, (previous?.ease ?? 2.5) + easeChange[rating])),
-      lastScore: score,
-      lastReviewed: reviewedAt,
-    };
+    const review = scheduleReview(previous, rating, score, reviewedAt);
     saveReview(question.id, review);
     setNow(reviewedAt);
-    if (current + 1 >= session.length) setSessionDone(true);
+    const shouldRequeue = sessionKind === "deck" && rating === "again";
+    if (shouldRequeue) setSession((items) => [...items, items[current]]);
+    if (current + 1 >= session.length && !shouldRequeue) setSessionDone(true);
     else { setCurrent((value) => value + 1); setSelected([]); setRevealed(false); }
-  }, [current, question.id, resultCount, reviews, saveReview, session.length]);
+  }, [current, question.id, resultCount, reviews, saveReview, session.length, sessionKind]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -208,20 +246,30 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
         if (authOpen) setAuthOpen(false);
         return;
       }
-      if (setupOpen || authOpen || tab !== "study" || sessionDone) return;
+      if (setupOpen || authOpen || !practiceActive || sessionDone) return;
+      if (flashcardActive) {
+        if (!revealed && (event.key === " " || event.key === "Enter")) {
+          event.preventDefault();
+          setRevealed(true);
+        } else if (revealed) {
+          const keyRatings: Record<string, ReviewRating> = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
+          if (keyRatings[event.key]) rate(keyRatings[event.key], null);
+        }
+        return;
+      }
       if (!revealed && /^[1-5]$/.test(event.key)) {
         const index = Number(event.key) - 1;
         setSelected((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index]);
       }
       if (!revealed && event.key === "Enter") checkAnswer();
       if (revealed) {
-        const keyRatings: Record<string, Rating> = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
+        const keyRatings: Record<string, ReviewRating> = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
         if (keyRatings[event.key]) rate(keyRatings[event.key]);
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [authOpen, checkAnswer, rate, revealed, sessionDone, setupOpen, tab]);
+  }, [authOpen, checkAnswer, flashcardActive, practiceActive, rate, revealed, sessionDone, setupOpen]);
 
   const domainStats = useMemo(() => {
     const rows = new Map<string, { label: string; area: string; reviewed: number; correct: number; total: number; due: number }>();
@@ -270,7 +318,8 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
           <span className="brand-words"><strong>ML4T Recall</strong><small>Concept learning companion</small></span>
         </Link>
         <nav aria-label="Primary navigation">
-          <Link className={`nav-item ${tab === "study" ? "active" : ""}`} aria-current={tab === "study" ? "page" : undefined} href="/"><BookOpen aria-hidden="true" /> Study</Link>
+          <Link className={`nav-item ${tab === "study" ? "active" : ""}`} aria-current={tab === "study" ? "page" : undefined} href="/" onClick={openDaily}><BookOpen aria-hidden="true" /> Study</Link>
+          <Link className={`nav-item ${tab === "decks" ? "active" : ""}`} aria-current={tab === "decks" ? "page" : undefined} href="/decks" onClick={openDeckLibrary}><Layers3 aria-hidden="true" /> Decks</Link>
           <Link className={`nav-item ${tab === "progress" ? "active" : ""}`} aria-current={tab === "progress" ? "page" : undefined} href="/progress"><ChartBar aria-hidden="true" /> Progress</Link>
           <Link className={`nav-item ${tab === "guide" ? "active" : ""}`} aria-current={tab === "guide" ? "page" : undefined} href="/learning-guide"><BookMarked aria-hidden="true" /> Learning guide</Link>
         </nav>
@@ -283,9 +332,9 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : "Study session") : tab === "progress" ? "Learning signal" : "How to use the pool"}</span>
-            <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : "Practice with intent.") : tab === "progress" ? "See what needs attention." : "Make every question useful."}</h1>
-            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : "Judge each claim, then learn from the reasoning.") : tab === "progress" ? "Coverage and confidence, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
+            <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : "Study session") : tab === "decks" ? (deckReviewActive ? `Exam ${activeDeck} · ${deckFormat === "flashcards" ? "Flashcards" : "Quiz"}` : "Your decks") : tab === "progress" ? "Learning signal" : "How to use the pool"}</span>
+            <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : "Practice with intent.") : tab === "decks" ? (deckReviewActive ? `Reviewing Exam ${activeDeck}.` : "Decks") : tab === "progress" ? "See what needs attention." : "Make every question useful."}</h1>
+            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : "Judge each claim, then learn from the reasoning.") : tab === "decks" ? (deckReviewActive ? (deckFormat === "flashcards" ? "Reveal the answer, then rate your recall to schedule the next revisit." : "Answer all five statements, then rate the question to schedule the next revisit.") : "Exam decks include every question and can be reviewed as quizzes or flashcards.") : tab === "progress" ? "Coverage and confidence, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
           </div>
           <div className="topbar-actions">
             <ThemeToggle />
@@ -297,13 +346,72 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             ) : (
               <button className="sync-button" onClick={() => { setAuthMessage(""); setAuthOpen(true); }}><Cloud aria-hidden="true" /> Sync progress</button>
             )}
-            <button className="new-session" onClick={() => setSetupOpen(true)}>New session <Plus aria-hidden="true" /></button>
+            {tab !== "decks" && <button className="new-session" onClick={() => setSetupOpen(true)}>New session <Plus aria-hidden="true" /></button>}
           </div>
         </header>
 
-        {tab === "study" && !sessionDone && (
+        {tab === "decks" && !deckReviewActive && (
+          <section className="decks-view">
+            <div className="deck-list">
+              {deckSummaries.map((deck) => (
+                <article className="deck-row" key={deck.exam}>
+                  <span className="deck-icon"><Layers3 aria-hidden="true" /></span>
+                  <span className="deck-copy"><strong>Exam {deck.exam}</strong><small>{deck.studied} studied · {deck.due} due</small></span>
+                  <span className="deck-total"><strong>{deck.total}</strong><small>questions</small></span>
+                  <div className="deck-actions">
+                    <button onClick={() => startDeck(deck.exam, "quiz")}><Check aria-hidden="true" /> Quiz</button>
+                    <button onClick={() => startDeck(deck.exam, "flashcards")}><BookOpen aria-hidden="true" /> Flashcards</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {practiceActive && !sessionDone && (
           <div className="study-layout">
-            <article className="question-card">
+            {flashcardActive ? (
+              <article className="question-card flashcard-card">
+                <div className="question-meta"><span>EXAM {question.exam} · {question.area.toUpperCase()}</span><span>{question.id} · PDF {question.page}</span></div>
+                <div className="progress-line"><span style={{ width: `${((current + 1) / session.length) * 100}%` }} /></div>
+                <div className="question-heading">
+                  <div><p className="counter">Card {current + 1} of {session.length}</p><h2>{question.group}</h2></div>
+                  {question.negated && <span className="reverse-badge">Reverse-key item</span>}
+                </div>
+                <p className="scenario"><MathText text={question.prompt} /></p>
+                {question.negated && <p className="instruction warning">This reverse-key card marks inaccurate statements as True.</p>}
+                {!revealed ? (
+                  <>
+                    <p className="instruction">Decide whether each statement is True or False, then reveal the answer.</p>
+                    <div className="flashcard-claims">
+                      {question.statements.map((statement) => <div key={statement.label}><span className="letter">{statement.label}</span><span><MathText text={statement.text} /></span></div>)}
+                    </div>
+                    <div className="flashcard-flip"><button className="check-button" onClick={() => setRevealed(true)}><kbd>Space</kbd> Show answer</button></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flashcard-answer-list">
+                      {question.statements.map((statement) => (
+                        <div className="flashcard-answer" key={statement.label}>
+                          <div><span className="letter">{statement.label}</span><span><MathText text={statement.text} /></span><strong className={statement.answer ? "true" : "false"}>{statement.answer ? "True" : "False"}</strong></div>
+                          <p><MathText text={statement.explanation} /></p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rating-panel flashcard-rating">
+                      <div><p>How well did you know this card?</p></div>
+                      <div className="rating-buttons">
+                        <button onClick={() => rate("again", null)}><kbd>1</kbd><strong>Again</strong><small>{formatInterval(getNextInterval(reviews[question.id], "again"))}</small></button>
+                        <button onClick={() => rate("hard", null)}><kbd>2</kbd><strong>Hard</strong><small>{formatInterval(getNextInterval(reviews[question.id], "hard"))}</small></button>
+                        <button onClick={() => rate("good", null)}><kbd>3</kbd><strong>Good</strong><small>{formatInterval(getNextInterval(reviews[question.id], "good"))}</small></button>
+                        <button onClick={() => rate("easy", null)}><kbd>4</kbd><strong>Easy</strong><small>{formatInterval(getNextInterval(reviews[question.id], "easy"))}</small></button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </article>
+            ) : (
+              <article className="question-card">
               <div className="question-meta"><span>EXAM {question.exam} · {question.area.toUpperCase()}</span><span>{question.id} · PDF {question.page}</span></div>
               <div className="progress-line"><span style={{ width: `${((current + 1) / session.length) * 100}%` }} /></div>
               <div className="question-heading">
@@ -339,32 +447,43 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
                 <div className="rating-panel">
                   <div><span className="rating-score">{resultCount}/5</span><p>{resultCount === 5 ? "Exact match. Can you explain each one?" : "Review the reasoning, then schedule the revisit."}</p></div>
                   <div className="rating-buttons">
-                    <button onClick={() => rate("again")}><kbd>1</kbd><strong>Again</strong><small>1 min</small></button>
-                    <button onClick={() => rate("hard")}><kbd>2</kbd><strong>Hard</strong><small>1 day</small></button>
-                    <button onClick={() => rate("good")}><kbd>3</kbd><strong>Good</strong><small>{reviews[question.id]?.interval ? `${Math.ceil(reviews[question.id].interval * 2.5)} days` : "2 days"}</small></button>
-                    <button onClick={() => rate("easy")}><kbd>4</kbd><strong>Easy</strong><small>{reviews[question.id]?.interval ? `${Math.ceil(reviews[question.id].interval * 3.5)} days` : "5 days"}</small></button>
+                    <button onClick={() => rate("again")}><kbd>1</kbd><strong>Again</strong><small>{formatInterval(getNextInterval(reviews[question.id], "again"))}</small></button>
+                    <button onClick={() => rate("hard")}><kbd>2</kbd><strong>Hard</strong><small>{formatInterval(getNextInterval(reviews[question.id], "hard"))}</small></button>
+                    <button onClick={() => rate("good")}><kbd>3</kbd><strong>Good</strong><small>{formatInterval(getNextInterval(reviews[question.id], "good"))}</small></button>
+                    <button onClick={() => rate("easy")}><kbd>4</kbd><strong>Easy</strong><small>{formatInterval(getNextInterval(reviews[question.id], "easy"))}</small></button>
                   </div>
                 </div>
               )}
-            </article>
+              </article>
+            )}
 
             <aside className="session-panel">
-              <span className="eyebrow">{sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : "This session"}</span>
-              <div className="score-ring" style={{ "--score": `${sessionAccuracy || 0}%` } as React.CSSProperties}><strong>{sessionStatements ? `${sessionAccuracy}%` : "—"}</strong><span>accuracy</span></div>
-              <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Statements</dt><dd>{sessionStatements}</dd></div><div><dt>Ready to learn</dt><dd>{dueCount}</dd></div></dl>
+              <span className="eyebrow">{sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : sessionKind === "deck" ? `Exam ${activeDeck} · ${deckFormat === "flashcards" ? "Flashcards" : "Quiz"}` : "This session"}</span>
+              {flashcardActive ? (
+                <div className="score-ring" style={{ "--score": `${Math.round((current / session.length) * 100)}%` } as React.CSSProperties}><strong>{current}</strong><span>reviewed</span></div>
+              ) : (
+                <div className="score-ring" style={{ "--score": `${sessionAccuracy || 0}%` } as React.CSSProperties}><strong>{sessionStatements ? `${sessionAccuracy}%` : "—"}</strong><span>accuracy</span></div>
+              )}
+              {flashcardActive ? (
+                <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Reviewed</dt><dd>{current}</dd></div><div><dt>Ready to learn</dt><dd>{dueCount}</dd></div></dl>
+              ) : (
+                <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Statements</dt><dd>{sessionStatements}</dd></div><div><dt>Ready to learn</dt><dd>{dueCount}</dd></div></dl>
+              )}
               <div className="focus-box"><span>Current domain</span><strong>{question.domain}</strong><small>{question.area} · Exam {question.exam}</small></div>
-              <p className="key-hint"><kbd>1–5</kbd> toggle · <kbd>Enter</kbd> check</p>
+              <p className="key-hint">{flashcardActive ? <><kbd>Space</kbd> reveal · <kbd>1–4</kbd> rate</> : <><kbd>1–5</kbd> toggle · <kbd>Enter</kbd> check</>}</p>
             </aside>
           </div>
         )}
 
-        {tab === "study" && sessionDone && (
+        {practiceActive && sessionDone && (
           <section className="completion-card">
-            <span className="completion-mark"><Check aria-hidden="true" /></span><span className="eyebrow">{sessionKind === "daily" ? "Completed for today" : "Session complete"}</span>
-            <h2>{sessionAccuracy}% statement accuracy</h2>
-            <p>{sessionKind === "daily" ? `You completed today’s shared Exam ${DAILY_EXAM} set. Your results are saved to your own progress history.` : `You worked through ${session.length} questions and identified which concepts need another look. Revisit the explanations, then connect those ideas back to the course materials.`}</p>
+            <span className="completion-mark"><Check aria-hidden="true" /></span><span className="eyebrow">{sessionKind === "daily" ? "Completed for today" : sessionKind === "deck" ? `Exam ${activeDeck} review complete` : "Session complete"}</span>
+            <h2>{flashcardActive ? `${session.length} card reviews completed` : `${sessionAccuracy}% statement accuracy`}</h2>
+            <p>{sessionKind === "daily" ? `You completed today’s shared Exam ${DAILY_EXAM} set. Your results are saved to your own progress history.` : sessionKind === "deck" ? `You cleared this Exam ${activeDeck} ${deckFormat === "flashcards" ? "flashcard" : "quiz"} queue. Every rating has been saved to the same compact per-question history used across the app.` : `You worked through ${session.length} questions and identified which concepts need another look. Revisit the explanations, then connect those ideas back to the course materials.`}</p>
             {sessionKind === "daily" ? (
               <div><button className="check-button" onClick={restartDaily}><RotateCcw aria-hidden="true" /> Do Daily 5 again</button><button className="secondary-button" onClick={() => setSetupOpen(true)}>Build custom session</button><Link className="secondary-button" href="/progress">View progress</Link></div>
+            ) : sessionKind === "deck" ? (
+              <div><button className="check-button" onClick={openDeckLibrary}><Layers3 aria-hidden="true" /> Back to decks</button><Link className="secondary-button" href="/progress">View progress</Link></div>
             ) : (
               <div><button className="check-button" onClick={() => setSetupOpen(true)}>Build another session <ArrowRight aria-hidden="true" /></button><Link className="secondary-button" href="/progress">View domain progress</Link></div>
             )}

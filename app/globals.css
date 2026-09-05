@@ -232,6 +232,24 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .account-chip button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; border: 0; border-radius: 7px; background: var(--muted); font-size: 9px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .account-chip button svg { width: 13px; height: 13px; }
 
+.decks-view { max-width: 820px; margin: auto; animation: view-in 320ms var(--ease-out) both; }
+.deck-list { overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--card); box-shadow: var(--shadow-card); }
+.deck-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto auto; gap: 15px; align-items: center; width: 100%; padding: 19px 20px; background: transparent; text-align: left; transition: background-color 160ms ease; }
+.deck-row + .deck-row { border-top: 1px solid var(--border); }
+.deck-row:hover { background: var(--surface-hover); }
+.deck-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 11px; background: color-mix(in srgb, var(--primary) 10%, var(--card)); color: var(--primary); }
+.deck-icon svg { width: 19px; height: 19px; }
+.deck-copy strong, .deck-copy small, .deck-total strong, .deck-total small { display: block; }
+.deck-copy strong { font-size: 14px; font-weight: 640; }
+.deck-copy small { margin-top: 5px; color: var(--muted-foreground); font-size: 9px; }
+.deck-total { min-width: 62px; text-align: right; }
+.deck-total strong { font-family: var(--font-geist-mono); font-size: 15px; font-weight: 650; }
+.deck-total small { margin-top: 3px; color: var(--muted-foreground); font-size: 8px; text-transform: uppercase; }
+.deck-actions { display: flex; gap: 6px; }
+.deck-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 9px; font-weight: 630; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease; }
+.deck-actions button:hover { border-color: var(--border-hover); background: var(--muted); color: var(--primary); }
+.deck-actions svg { width: 13px; height: 13px; }
+
 .study-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; max-width: 1240px; margin: auto; animation: view-in 320ms var(--ease-out) both; }
 .question-card { min-width: 0; padding: 28px 30px 26px; border: 1px solid var(--border); border-radius: 18px; background: var(--card); box-shadow: var(--shadow-card); }
 .question-meta { display: flex; justify-content: space-between; gap: 20px; color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 9px; font-weight: 560; letter-spacing: .07em; }
@@ -281,6 +299,20 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .math-inline .katex { font-size: 1.05em; }
 .math-display { display: block; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 2px 0; text-align: center; }
 .math-display .katex-display { margin: .65em 0; }
+.flashcard-claims { display: grid; gap: 7px; }
+.flashcard-claims > div { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 11px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 11px; font-size: 12px; line-height: 1.45; }
+.flashcard-flip { display: flex; justify-content: center; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.flashcard-flip kbd { padding: 3px 6px; border: 1px solid rgb(255 255 255 / 28%); border-radius: 5px; font-family: var(--font-geist-mono); font-size: 8px; }
+.flashcard-answer-list { display: grid; gap: 8px; animation: reveal-in 260ms var(--ease-out) both; }
+.flashcard-answer { overflow: hidden; border: 1px solid var(--border); border-radius: 11px; background: var(--secondary); }
+.flashcard-answer > div { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 11px 12px; font-size: 11px; line-height: 1.45; }
+.flashcard-answer > div > strong { padding: 4px 7px; border-radius: 99px; font-family: var(--font-geist-mono); font-size: 8px; text-transform: uppercase; }
+.flashcard-answer > div > strong.true { background: var(--success-soft); color: var(--success); }
+.flashcard-answer > div > strong.false { background: var(--danger-soft); color: var(--destructive); }
+.flashcard-answer > p { margin: 0; padding: 10px 12px 11px 53px; border-top: 1px solid var(--border); color: var(--supporting-copy); font-size: 10px; line-height: 1.55; }
+.flashcard-rating { grid-template-columns: minmax(125px, .45fr) 1.55fr; }
+.flashcard-rating > div:first-child { display: block; }
+.flashcard-rating > div:first-child p { color: var(--foreground); font-size: 10px; font-weight: 620; }
 .question-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
 .skip-button { padding: 8px 2px; border: 0; background: transparent; color: var(--muted-foreground); font-size: 10px; font-weight: 560; }
 .skip-button:hover { color: var(--foreground); }
@@ -440,7 +472,7 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
   .sidebar { position: sticky; height: 64px; min-height: 0; flex-direction: row; align-items: center; padding: 9px 13px; border-right: 0; border-bottom: 1px solid var(--border); }
   .brand-lockup { margin: 0; }
   .brand-mark { width: 36px; height: 36px; }
-  .sidebar nav { grid-template-columns: repeat(3, 40px); gap: 3px; margin-left: auto; }
+  .sidebar nav { grid-template-columns: repeat(4, 40px); gap: 3px; margin-left: auto; }
   .nav-item { padding: 10px; }
   .workspace { padding: 25px 13px 48px; }
   .topbar { align-items: center; gap: 12px; margin-bottom: 21px; }
@@ -461,6 +493,12 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
   .question-actions { gap: 12px; }
   .check-button { flex: 1; }
   .rating-buttons { grid-template-columns: repeat(2, 1fr); }
+  .deck-row { grid-template-columns: 38px minmax(0, 1fr); gap: 12px; padding: 16px 14px; }
+  .deck-icon { width: 38px; height: 38px; }
+  .deck-total { display: none; }
+  .deck-actions { grid-column: 2; }
+  .flashcard-answer > div { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; padding: 10px 9px; }
+  .flashcard-answer > p { padding-left: 46px; }
   .completion-card { margin-top: 5vh; padding: 34px 18px; }
   .completion-card > div { flex-direction: column; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
