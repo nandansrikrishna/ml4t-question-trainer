@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
-    "test:exam": "node --experimental-strip-types --test tests/practice-exam.test.mjs"
+    "test:exam": "node --experimental-strip-types --test tests/practice-exam.test.mjs tests/exam-sync.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.5",

@@ -107,6 +107,13 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const [authMessage, setAuthMessage] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
 
+  useEffect(() => { if (user) queueMicrotask(() => setAuthOpen(false)); }, [user]);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("authError")) {
+      queueMicrotask(() => { setAuthMessage("That sign-in link could not be completed. Please try signing in again. Your saved exam is still available."); setAuthOpen(true); });
+    }
+  }, []);
+
   useEffect(() => {
     if (hydrated) queueMicrotask(() => setNow(Date.now()));
   }, [hydrated]);
@@ -290,20 +297,20 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const resetProgress = () => {
     if (!hydrated || syncStatus === "syncing") return;
     const scope = user ? "synced answer history on every device" : "device-local answer history";
-    if (window.confirm(`Reset all ${scope}? This cannot be undone.`)) void resetHistory();
+    if (window.confirm(`Reset study practice in ${scope}? Exam history will be preserved. This cannot be undone.`)) void resetHistory();
   };
 
   const sendMagicLink = async (event: React.FormEvent) => {
     event.preventDefault();
     setAuthBusy(true);
-    const error = await requestMagicLink(email.trim());
+    const error = await requestMagicLink(email.trim(), tab === "exam" ? "/practice-exam" : pathname);
     setAuthMessage(error ?? "Check your email for a secure sign-in link.");
     setAuthBusy(false);
   };
 
   const continueWithGoogle = async () => {
     setAuthBusy(true);
-    const error = await signInWithGoogle();
+    const error = await signInWithGoogle(tab === "exam" ? "/practice-exam" : pathname);
     if (error) { setAuthMessage(error); setAuthBusy(false); }
   };
 
@@ -355,7 +362,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
           </div>
         </header>
 
-        {tab === "exam" && hydrated && <PracticeExam key={user?.id ?? "device"} owner={user?.id ?? "device"} />}
+        <PracticeExam userId={user?.id ?? null} visible={tab === "exam"} onSignIn={() => { setAuthMessage(""); setAuthOpen(true); }} />
 
         {tab === "study" && !sessionDone && (
           <div className="study-layout">
@@ -478,11 +485,11 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
         </div>
       )}
 
-      {authOpen && !user && (
+      {authOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAuthOpen(false); }}>
           <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-            <div className="modal-head"><div><span className="eyebrow">Optional cloud sync</span><h2 id="auth-title">Study anywhere.</h2></div><button aria-label="Close" onClick={() => setAuthOpen(false)}><X aria-hidden="true" /></button></div>
-            <p className="auth-intro">Keep studying without an account, or sign in to merge this device&apos;s progress and sync it across devices.</p>
+            <div className="modal-head"><div><span className="eyebrow">{tab === "exam" ? "Practice exam sign-in" : "Optional cloud sync"}</span><h2 id="auth-title">{tab === "exam" ? "Save your exam journey." : "Study anywhere."}</h2></div><button aria-label="Close" onClick={() => setAuthOpen(false)}><X aria-hidden="true" /></button></div>
+            <p className="auth-intro">{tab === "exam" ? "Sign in to start exams and sync your history. You’ll return here after signing in; the timer starts only when you choose Start Exam. Study practice remains available without an account." : "Keep studying without an account, or sign in to merge this device’s progress and sync it across devices."}</p>
             <button className="google-button" disabled={authBusy} onClick={() => void continueWithGoogle()}><span>G</span> Continue with Google</button>
             <div className="auth-divider"><span>or use a magic link</span></div>
             <form onSubmit={(event) => void sendMagicLink(event)}>
@@ -490,7 +497,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
               <button className="start-button" disabled={authBusy || !email.trim()}>{authBusy ? "Sending…" : "Email me a sign-in link"}<ArrowRight aria-hidden="true" /></button>
             </form>
             {authMessage && <p className="auth-message" role="status">{authMessage}</p>}
-            <p className="auth-footnote">Supabase stores only your account and answer history. Question text and answer keys stay bundled in this app.</p>
+            <p className="auth-footnote">Your account, answer history, and exam sessions are saved so you can continue across devices.</p>
           </section>
         </div>
       )}

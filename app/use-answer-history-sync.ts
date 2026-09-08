@@ -33,6 +33,7 @@ import {
   type ReviewMap,
 } from "../lib/progress";
 import { createClient } from "../lib/supabase/client";
+import { rememberAuthReturn } from "../lib/auth-return";
 
 export type SyncStatus = "device" | "syncing" | "synced" | "offline";
 
@@ -88,6 +89,7 @@ export function useAnswerHistorySync(questionKeys: Record<string, number>) {
 
   const insertAttempts = useCallback(async (userId: string, items: AttemptMap) => {
     const rows = Object.values(items).flatMap((attempt) => {
+      if (attempt.examSessionId) return [];
       const questionKey = questionKeyByCode.get(attempt.questionCode);
       return questionKey
         ? [attemptToInsert(userId, questionKey, attempt)]
@@ -351,9 +353,10 @@ export function useAnswerHistorySync(questionKeys: Record<string, number>) {
   }, [persistAttempts]);
 
   const resetHistory = useCallback(async () => {
-    setAttempts({});
+    const examAttempts = Object.fromEntries(Object.entries(attempts).filter(([, attempt]) => attempt.examSessionId));
+    setAttempts(examAttempts);
     setLegacyReviews({});
-    persistAttempts({});
+    persistAttempts(examAttempts);
     persistLegacyReviews({});
     pending.current.clear();
     const activeUser = currentUser.current;
@@ -364,14 +367,15 @@ export function useAnswerHistorySync(questionKeys: Record<string, number>) {
       supabase
         .from("user_question_attempts")
         .delete()
-        .eq("user_id", activeUser.id),
+        .eq("user_id", activeUser.id)
+        .is("exam_session_id", null),
       supabase
         .from("user_question_progress")
         .delete()
         .eq("user_id", activeUser.id),
     ]);
     setSyncStatus(attemptResult.error || progressResult.error ? "offline" : "synced");
-  }, [persistAttempts, persistLegacyReviews, supabase]);
+  }, [attempts, persistAttempts, persistLegacyReviews, supabase]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -387,15 +391,18 @@ export function useAnswerHistorySync(questionKeys: Record<string, number>) {
       if (currentUser.current) void initializeUser(currentUser.current);
     };
     window.addEventListener("online", handleOnline);
+    window.addEventListener("ml4t-exam-submitted", handleOnline);
 
     return () => {
       subscription.unsubscribe();
       window.removeEventListener("online", handleOnline);
+      window.removeEventListener("ml4t-exam-submitted", handleOnline);
       if (flushTimer.current) clearTimeout(flushTimer.current);
     };
   }, [initializeUser, supabase, switchToDevice]);
 
-  const requestMagicLink = useCallback(async (email: string) => {
+  const requestMagicLink = useCallback(async (email: string, next = "/") => {
+    rememberAuthReturn(next);
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
@@ -403,7 +410,8 @@ export function useAnswerHistorySync(questionKeys: Record<string, number>) {
     return error?.message ?? null;
   }, [supabase]);
 
-  const signInWithGoogle = useCallback(async () => {
+  const signInWithGoogle = useCallback(async (next = "/") => {
+    rememberAuthReturn(next);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback` },

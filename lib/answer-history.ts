@@ -7,6 +7,8 @@ export type AnswerAttempt = {
   id: string;
   questionCode: string;
   answerMask: number;
+  answeredMask?: number;
+  examSessionId?: string;
   score: number;
   answeredAt: number;
   source: AttemptSource;
@@ -96,6 +98,8 @@ export function attemptRowsToMap(
       id: row.attempt_id,
       questionCode,
       answerMask: row.answer_mask,
+      answeredMask: row.answered_mask,
+      examSessionId: row.exam_session_id ?? undefined,
       score: row.score,
       answeredAt: Date.parse(row.answered_at),
       source: row.source as AttemptSource,
@@ -116,6 +120,8 @@ export function attemptToInsert(
     attempt_id: attempt.id,
     question_key: questionKey,
     answer_mask: attempt.answerMask,
+    answered_mask: attempt.answeredMask ?? 31,
+    exam_session_id: attempt.examSessionId ?? null,
     score: attempt.score,
     source: attempt.source,
     skipped: attempt.skipped ?? false,
@@ -215,6 +221,8 @@ function isAnswerAttempt(value: unknown): value is AnswerAttempt {
     && Number.isInteger(attempt.answerMask)
     && attempt.answerMask! >= 0
     && attempt.answerMask! <= 31
+    && (attempt.answeredMask === undefined || (Number.isInteger(attempt.answeredMask) && attempt.answeredMask >= 0 && attempt.answeredMask <= 31))
+    && (attempt.examSessionId === undefined || typeof attempt.examSessionId === "string")
     && Number.isInteger(attempt.score)
     && attempt.score! >= 0
     && attempt.score! <= 5

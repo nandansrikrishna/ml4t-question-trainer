@@ -18,6 +18,7 @@ export type ExamItem = {
   order: number[];
   answers: (boolean | null)[];
   pinned: boolean;
+  score?: number;
 };
 export type ExamSession = {
   id: string;
@@ -84,8 +85,9 @@ export function scoreExam(session: ExamSession) {
   return session.items.reduce(
     (score, item) =>
       score +
-      item.question.statements.filter((s, i) => item.answers[i] === s.answer)
-        .length,
+      (item.score ??
+        item.question.statements.filter((s, i) => item.answers[i] === s.answer)
+          .length),
     0,
   );
 }

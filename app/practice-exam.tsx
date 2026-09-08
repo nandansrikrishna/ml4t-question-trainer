@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,140 +13,61 @@ import {
   Pin,
   X,
 } from "lucide-react";
-import rawQuestions from "./data/questions.json";
+import { useExamSync } from "./use-exam-sync";
 import { MathText } from "./math-text";
 import {
   clockText,
   completeQuestion,
-  createExam,
-  finishExam,
-  readExams,
   scoreExam,
   type ExamItem,
-  type ExamSession,
 } from "../lib/practice-exam";
 
-export default function PracticeExam({ owner }: { owner: string }) {
-  const storageKey = `ml4t-practice-exams-v1:${owner}`;
-  const [sessions, setSessions] = useState<ExamSession[]>([]);
-  const latest = useRef<ExamSession[]>([]);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState("");
+export default function PracticeExam({
+  userId,
+  visible,
+  onSignIn,
+}: {
+  userId: string | null;
+  visible: boolean;
+  onSignIn: () => void;
+}) {
+  const {
+    sessions,
+    owner,
+    ready,
+    starting,
+    start: startCloud,
+    updateItem: updateCloudItem,
+    finish,
+    now,
+    status,
+    error,
+    pending,
+    recovered,
+    downloadRecovery,
+    retry,
+  } = useExamSync(userId);
   const [selected, setSelected] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [calculator, setCalculator] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [now, setNow] = useState(0);
-  const [notice, setNotice] = useState("");
-  const persist = useCallback(
-    (next: ExamSession[]) => {
-      latest.current = next;
-      setSessions(next);
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(next));
-        setError("");
-      } catch {
-        setError(
-          "Your latest changes could not be saved on this device. Keep this page open to retain this session.",
-        );
-      }
-    },
-    [storageKey],
-  );
-  useEffect(() => {
-    const load = () => {
-      try {
-        const stored = readExams(localStorage.getItem(storageKey));
-        const next = stored.map((s) =>
-          s.submittedAt === null && Date.now() >= s.deadline
-            ? finishExam(s, s.deadline)
-            : s,
-        );
-        latest.current = next;
-        setSessions(next);
-        setReady(true);
-        setNow(Date.now());
-        if (JSON.stringify(next) !== JSON.stringify(stored))
-          localStorage.setItem(storageKey, JSON.stringify(next));
-      } catch {
-        setError(
-          "Saved exams could not be loaded. Your stored data has been left intact. Enable browser storage and reload to continue.",
-        );
-      }
-    };
-    queueMicrotask(load);
-    const sync = (event: StorageEvent) => {
-      if (event.key === storageKey) load();
-    };
-    window.addEventListener("storage", sync);
-    const tick = () => {
-      const time = Date.now();
-      setNow(time);
-      const expired = latest.current.some(
-        (s) => s.submittedAt === null && time >= s.deadline,
-      );
-      if (expired) {
-        const next = latest.current.map((s) =>
-          s.submittedAt === null && time >= s.deadline
-            ? finishExam(s, s.deadline)
-            : s,
-        );
-        latest.current = next;
-        setSessions(next);
-        setNotice("Time is up. Your exam has been submitted automatically.");
-        try {
-          localStorage.setItem(storageKey, JSON.stringify(next));
-        } catch {
-          setError("Your result could not be saved. Keep this page open.");
-        }
-      }
-    };
-    const timer = window.setInterval(tick, 1000);
-    window.addEventListener("focus", tick);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("storage", sync);
-      window.removeEventListener("focus", tick);
-    };
-  }, [storageKey]);
   const session = sessions.find((s) => s.id === selected);
   const active = sessions.find((s) => s.submittedAt === null);
   const updateItem = useCallback(
     (index: number, update: (item: ExamItem) => ExamItem) => {
-      const current = latest.current.find((s) => s.id === selected);
-      if (!current || current.submittedAt !== null) return;
-      if (Date.now() >= current.deadline) {
-        persist(
-          latest.current.map((s) => (s.id === current.id ? finishExam(s) : s)),
-        );
-        return;
-      }
-      persist(
-        latest.current.map((s) =>
-          s.id === current.id
-            ? {
-                ...s,
-                items: s.items.map((item, i) =>
-                  i === index ? update(item) : item,
-                ),
-              }
-            : s,
-        ),
-      );
+      if (selected) updateCloudItem(selected, index, update);
     },
-    [selected, persist],
+    [selected, updateCloudItem],
   );
-  const start = (exam: number) => {
-    if (latest.current.some((s) => s.submittedAt === null)) return;
-    try {
-      const next = createExam(rawQuestions, exam);
-      persist([next, ...latest.current]);
-      setSelected(next.id);
-      setNow(next.startedAt);
-      setNotice("");
+  const start = async (exam: number) => {
+    if (!userId) {
+      onSignIn();
+      return;
+    }
+    const id = await startCloud(exam);
+    if (id) {
+      setSelected(id);
       window.scrollTo(0, 0);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start exam.");
     }
   };
   const jump = (index: number) =>
@@ -157,15 +78,42 @@ export default function PracticeExam({ owner }: { owner: string }) {
   const answered = session?.items.filter(completeQuestion).length ?? 0;
   const history = sessions.filter((s) => s.submittedAt !== null);
   return (
-    <div className="exam-root">
+    <div className="exam-root" hidden={!visible}>
       {error && (
         <p className="exam-alert" role="alert">
           {error}
         </p>
       )}
-      {notice && (
+      {status && (
+        <div className="exam-sync-status" role="status">
+          <span>{status}</span>
+          {status !== "Exam history synced" &&
+            status !== "Syncing exam…" &&
+            (userId === owner && !status.startsWith("Sign in again") ? (
+              <button className="text-button" onClick={retry}>
+                Retry sync
+              </button>
+            ) : (
+              <button className="text-button" onClick={onSignIn}>
+                Sign in to sync
+              </button>
+            ))}
+        </div>
+      )}
+      {pending && (
         <p className="exam-alert" role="status">
-          {notice}
+          Your result is saved on this device and waiting to sync. It will be
+          confirmed when your account reconnects.
+        </p>
+      )}
+      {recovered && (
+        <p className="exam-alert" role="status">
+          This exam was submitted on another device. Its cloud result is final;
+          any edits that did not reach that submission have been preserved in
+          this browser’s recovery data.{" "}
+          <button className="text-button" onClick={downloadRecovery}>
+            Download saved edits
+          </button>
         </p>
       )}
       {!session ? (
@@ -206,7 +154,6 @@ export default function PracticeExam({ owner }: { owner: string }) {
                 className="new-session"
                 onClick={() => {
                   setSelected(active.id);
-                  setNotice("");
                 }}
               >
                 Resume exam <ArrowRight size={16} />
@@ -226,21 +173,29 @@ export default function PracticeExam({ owner }: { owner: string }) {
                 </div>
                 <button
                   className="new-session"
-                  disabled={!ready || !!active}
-                  onClick={() => start(exam)}
+                  disabled={
+                    !ready || starting || (!!userId && (!!active || pending))
+                  }
+                  onClick={() => void start(exam)}
                 >
-                  Start Exam {exam}
+                  {!userId
+                    ? "Sign in to start"
+                    : starting
+                      ? "Starting…"
+                      : `Start Exam ${exam}`}
                   <ArrowRight size={16} />
                 </button>
               </article>
             ))}
           </div>
           <p className="exam-storage">
-            Answers, pins, and history are saved automatically in this browser
-            {owner !== "device" ? " for your account" : ""}; they do not sync
-            across devices. Closing the page does not pause the timer. Results
-            are revealed only after submission. Each correct statement earns one
-            point; unanswered statements earn zero.
+            Sign in to start a practice exam and sync your sessions and history
+            across devices. The timer starts only when you choose Start Exam.
+            Answers and pins also autosave in this browser, so an interrupted
+            connection or login won’t interrupt an active exam. Closing the page
+            does not pause the timer. Each correct statement earns one point;
+            unanswered statements earn zero. Ordinary Study practice remains
+            available without signing in.
           </p>
           <section className="exam-history">
             <div className="section-title">
@@ -259,7 +214,7 @@ export default function PracticeExam({ owner }: { owner: string }) {
                   key={s.id}
                   onClick={() => {
                     setSelected(s.id);
-                    setNotice("");
+
                     window.scrollTo(0, 0);
                   }}
                 >
@@ -497,11 +452,7 @@ export default function PracticeExam({ owner }: { owner: string }) {
                   <button
                     className="new-session"
                     onClick={() => {
-                      persist(
-                        latest.current.map((s) =>
-                          s.id === session.id ? finishExam(s) : s,
-                        ),
-                      );
+                      finish(session.id);
                       setConfirming(false);
                       window.scrollTo(0, 0);
                     }}
@@ -531,11 +482,26 @@ const ExamCard = memo(function ExamCard({
   update: (index: number, fn: (item: ExamItem) => ExamItem) => void;
 }) {
   const [dragOver, setDragOver] = useState<string | null>(null);
-  const classify = (statement: number, value: boolean | null) =>
+  const [picked, setPicked] = useState<number | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const classify = (statement: number, value: boolean | null) => {
+    if (review) return;
     update(index, (i) => ({
       ...i,
       answers: i.answers.map((a, n) => (n === statement ? value : a)),
     }));
+    setPicked(null);
+    setAnnouncement(
+      `Statement ${item.question.statements[statement].label} moved to ${value === null ? "Unclassified" : value ? "True" : "False"}.`,
+    );
+    requestAnimationFrame(() =>
+      document
+        .querySelector<HTMLElement>(
+          `#exam-question-${index} [data-statement="${statement}"]`,
+        )
+        ?.focus({ preventScroll: true }),
+    );
+  };
   return (
     <article className="exam-question" id={`exam-question-${index}`}>
       <div className="exam-question-meta">
@@ -568,8 +534,21 @@ const ExamCard = memo(function ExamCard({
             <strong>False</strong>.
           </>
         )}{" "}
-        Drag a statement or use its dropdown.
+        {!review &&
+          "Drag each statement into a section, or select it and then select a section heading."}
       </p>
+      {!review && (
+        <>
+          <span id={`exam-controls-${index}`} className="sr-only">
+            Press Enter or Space to select a statement, then choose a section
+            heading. You can also press T for True, F for False, or U for
+            Unclassified. Escape cancels selection.
+          </span>
+          <span className="sr-only" role="status">
+            {announcement}
+          </span>
+        </>
+      )}
       <div className="exam-buckets">
         {[
           { name: "True", value: true },
@@ -604,7 +583,20 @@ const ExamCard = memo(function ExamCard({
             }}
           >
             <h4>
-              {bucket.name}
+              {review ? (
+                bucket.name
+              ) : (
+                <button
+                  className="exam-bucket-target"
+                  disabled={picked === null}
+                  onClick={() => {
+                    if (picked !== null) classify(picked, bucket.value);
+                  }}
+                  aria-label={`Move selected statement to ${bucket.name}`}
+                >
+                  {bucket.name}
+                </button>
+              )}
               <small>
                 {item.answers.filter((a) => a === bucket.value).length}
               </small>
@@ -614,10 +606,42 @@ const ExamCard = memo(function ExamCard({
                 .filter((n) => item.answers[n] === bucket.value)
                 .map((n) => (
                   <div
-                    className="exam-statement"
+                    className={`exam-statement ${!review && picked === n ? "picked" : ""}`}
                     key={n}
+                    data-statement={n}
+                    role={review ? undefined : "button"}
+                    tabIndex={review ? undefined : 0}
+                    aria-pressed={review ? undefined : picked === n}
+                    aria-describedby={
+                      review ? undefined : `exam-controls-${index}`
+                    }
+                    onClick={() => {
+                      if (!review) setPicked(picked === n ? null : n);
+                    }}
+                    onKeyDown={(e) => {
+                      if (review) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setPicked(picked === n ? null : n);
+                      } else if (
+                        ["t", "f", "u"].includes(e.key.toLowerCase()) &&
+                        !e.ctrlKey &&
+                        !e.metaKey &&
+                        !e.altKey
+                      ) {
+                        e.preventDefault();
+                        classify(
+                          n,
+                          e.key.toLowerCase() === "u"
+                            ? null
+                            : e.key.toLowerCase() === "t",
+                        );
+                      } else if (e.key === "Escape") setPicked(null);
+                    }}
                     draggable={!review}
                     onDragStart={(e) => {
+                      if (review) return;
+                      setPicked(null);
                       e.dataTransfer.setData(
                         "text/plain",
                         JSON.stringify({
@@ -634,28 +658,7 @@ const ExamCard = memo(function ExamCard({
                         <MathText text={item.question.statements[n].text} />
                       </span>
                     </div>
-                    {!review ? (
-                      <select
-                        aria-label={`Classify question ${index + 1} statement ${item.question.statements[n].label}`}
-                        value={
-                          item.answers[n] === null
-                            ? ""
-                            : String(item.answers[n])
-                        }
-                        onChange={(e) =>
-                          classify(
-                            n,
-                            e.target.value === ""
-                              ? null
-                              : e.target.value === "true",
-                          )
-                        }
-                      >
-                        <option value="">Unclassified</option>
-                        <option value="true">True</option>
-                        <option value="false">False</option>
-                      </select>
-                    ) : (
+                    {review && (
                       <p
                         className={
                           item.answers[n] === item.question.statements[n].answer

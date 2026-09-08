@@ -536,7 +536,6 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .exam-statement[draggable="true"] { cursor: grab; }
 .exam-statement > div { display: flex; align-items: flex-start; gap: 8px; }
 .exam-statement svg { flex-shrink: 0; margin-top: 4px; color: var(--muted-foreground); }
-.exam-statement select { font: inherit; font-size: 10px; color: var(--primary); background: var(--secondary); border: 1px solid var(--border); border-radius: 5px; padding: 4px; margin: 10px 0 0 24px; max-width: 100%; }
 .exam-correct, .exam-incorrect { padding-top: 10px; border-top: 1px solid var(--border); margin-top: 12px; }
 .exam-correct strong { color: var(--success); }
 .exam-incorrect strong { color: var(--destructive); }
@@ -583,3 +582,12 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
   .exam-navigator { top: 190px; max-height: calc(100dvh - 210px); }
   .exam-question { scroll-margin-top: 195px; }
 }
+.exam-root[hidden] { display: none; }
+.exam-sync-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px 18px; color: var(--muted-foreground); font-size: 12px; }
+
+.exam-statement.picked { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); background: var(--success-soft); }
+.exam-statement[role="button"]:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.exam-bucket-target { flex: 1; text-align: left; background: none; border: 0; padding: 3px 0; font: inherit; color: inherit; }
+.exam-root .exam-bucket-target:disabled { opacity: 1; }
+.exam-bucket-target:not(:disabled) { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.exam-root .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

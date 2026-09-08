@@ -2,8 +2,9 @@
 
 Next.js study interface for the bundled 938-question ML4T pool. Questions,
 statements, explanations, and answer keys remain in `app/data/questions.json`;
-Supabase stores only authentication records, the tiny code/key catalog, and
-answer attempts and a legacy aggregate-progress baseline.
+Supabase stores authentication records, the code/key catalog, answer attempts,
+exam sessions and drafts, private exam sampling/grading metadata, and a legacy
+aggregate-progress baseline.
 
 ## Local setup
 
@@ -33,7 +34,8 @@ publishable key in `.env.local`/deployment settings rather than source control.
 - `user_question_attempts` stores each submitted five-statement answer or skip
   as a compact bit mask, score, source, skip flag, and timestamp. Skips complete
   the current session but do not affect accuracy or review scheduling. Attempts
-  are immutable except when a user resets all history.
+  are immutable. Resetting study progress can delete ordinary attempts; linked
+  exam attempts remain protected.
 - `user_question_progress` is retained only to preserve aggregate progress from
   releases before answer history was introduced; new answers do not update it.
 - `app/data/question-keys.json` is the immutable bundled code→`smallint`
@@ -74,20 +76,61 @@ npm run build
 
 ### Practice exams
 
-The **Practice Exam** tab (`/practice-exam`) offers Exam 1 and Exam 2 rehearsals.
-Each attempt draws two questions from each of ten domains in both knowledge areas,
-then shuffles question and statement order. The 90-minute wall-clock deadline keeps
-running after navigation, refresh, or closing the browser; expired attempts are
-finalized when the app next opens. Statements can be dragged into True/False or
-classified with an accessible dropdown. A collapsible navigator keeps pinned
-questions at the top, and the calculator supports basic arithmetic and dragging.
+The **Practice Exam** tab (`/practice-exam`) and exam details are public. Starting
+an exam requires sign-in and a connection; ordinary Study practice remains available
+anonymously. Sign-in returns to the originating tab and never starts the timer.
+The destination travels in a short-lived, same-origin cookie, preserving the existing
+exact `/auth/callback` redirect URLs for Google and magic-link sign-in.
 
-Submission locks the attempt and reveals statement-level scoring (one point per
-correct classification, zero for unanswered statements), explanations, area scores,
-and elapsed time. Exam history and in-progress sessions are stored in browser
-localStorage, scoped to the signed-in user or anonymous device. **Exam sessions do
-not currently sync to Supabase or contribute to spaced-repetition progress.**
-Storage failures are surfaced in the exam UI; clearing browser data removes history.
+Each server-created exam draws two questions from each of ten domains in both
+knowledge areas, then shuffles the question and statement order. Its server-issued
+90-minute deadline continues through navigation, refresh, connection loss, and
+sign-out. Users can drag statements into True/False, or select a statement and then a
+section heading using touch or a keyboard. Focused statements also support T/F/U
+shortcuts. Users can pin questions and use the draggable calculator.
 
-Run `npm run test:exam` to verify sampling, scoring, timeout behavior, and saved
-session validation.
+Persistence is split into:
+
+- `user_exam_sessions`: owner, exam, start, deadline, submission time, and revision.
+- `user_exam_questions`: question/order assignments, pins, and editable draft masks.
+- `user_question_attempts`: the canonical finalized answers, `answered_mask`, scores,
+  and `exam_session_id`. Unique session/question keys prevent duplicate attempts.
+
+Only ownership-checked RPCs write exams. Finalization locks the session, grades all
+40 questions against private pool keys, writes attempts, and clears draft answers
+in one transaction. Final reviews use the attempt rows. Unanswered statements earn
+zero points, including statements whose keyed answer is False. Exam attempts feed
+existing learning progress and scheduling; **Reset progress preserves exam history**,
+with that protection also enforced by RLS.
+
+Browser autosaving stores an account-scoped snapshot and a durable edit queue before
+network requests. Reconnection, focus, periodic retries, and reauthentication flush
+pending changes. Persistent request IDs make retries safe after a lost response;
+revision checks rebase pending field edits onto cloud state instead of replacing
+whole questions. If two devices edit the same field, the later accepted edit wins.
+A finalized exam cannot be overwritten: unsynced edits from another device are
+retained in local recovery data, and the UI reports the conflict.
+
+Expired sessions lock locally. Cloud finalization happens on the next authenticated
+sync after all pre-deadline edits have been delivered, so an offline answer is not
+silently discarded by a background timeout job. For this practice tool, delayed
+edits carry their original client-recorded time, constrained to the exam window;
+this is an offline-recovery design, not a proctored anti-tampering boundary.
+
+An expired login does not unmount or erase the active exam. The originating account
+must sign in again to sync; another account cannot upload its queue. Earlier v1
+account-scoped local exams are imported idempotently and regraded on the server.
+Legacy anonymous v1 data is left intact and is never silently assigned to an account.
+Browser storage errors are visible; clearing browser data removes unsynced edits,
+while synced history remains in Supabase.
+
+Validation:
+
+```sh
+npm run test:exam
+npm run lint
+npm run typecheck
+npm run build
+# Transactional database integration tests; all fixtures are rolled back:
+npx supabase db query --linked --file supabase/tests/practice_exam_sync_test.sql
+```
