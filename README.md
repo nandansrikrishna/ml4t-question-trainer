@@ -54,6 +54,8 @@ Email magic links use `/auth/callback`. In the hosted Supabase Auth URL
 configuration, set the Site URL to `https://www.ml4t.study` and allow
 `https://www.ml4t.study/auth/callback`,
 `https://ml4t.study/auth/callback`,
+`https://www.ml4t.cards/auth/callback`,
+`https://ml4t.cards/auth/callback`,
 `https://ml4t-question-trainer.vercel.app/auth/callback`, and
 `http://localhost:3000/auth/callback` as exact redirect URLs. Hosted Google
 sign-in uses the **ML4T Recall Web** OAuth client in the `ml4t-recall` Google
