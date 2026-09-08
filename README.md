@@ -71,3 +71,23 @@ npm run lint
 npm run typecheck
 npm run build
 ```
+
+### Practice exams
+
+The **Practice Exam** tab (`/practice-exam`) offers Exam 1 and Exam 2 rehearsals.
+Each attempt draws two questions from each of ten domains in both knowledge areas,
+then shuffles question and statement order. The 90-minute wall-clock deadline keeps
+running after navigation, refresh, or closing the browser; expired attempts are
+finalized when the app next opens. Statements can be dragged into True/False or
+classified with an accessible dropdown. A collapsible navigator keeps pinned
+questions at the top, and the calculator supports basic arithmetic and dragging.
+
+Submission locks the attempt and reveals statement-level scoring (one point per
+correct classification, zero for unanswered statements), explanations, area scores,
+and elapsed time. Exam history and in-progress sessions are stored in browser
+localStorage, scoped to the signed-in user or anonymous device. **Exam sessions do
+not currently sync to Supabase or contribute to spaced-repetition progress.**
+Storage failures are surfaced in the exam UI; clearing browser data removes history.
+
+Run `npm run test:exam` to verify sampling, scoring, timeout behavior, and saved
+session validation.

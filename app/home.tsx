@@ -3,12 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import katex from "katex";
+import { MathText } from "./math-text";
 import {
   ArrowRight,
   BookMarked,
   BookOpen,
   ChartBar,
+  ClipboardCheck,
   Check,
   Cloud,
   LogOut,
@@ -17,7 +18,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   selectedIndexesToMask,
   summarizeQuestion,
@@ -29,6 +30,7 @@ import { useAnswerHistorySync } from "./use-answer-history-sync";
 import questionKeys from "./data/question-keys.json";
 import rawQuestions from "./data/questions.json";
 import ThemeToggle from "./theme-toggle";
+import PracticeExam from "./practice-exam";
 
 type Statement = { label: string; text: string; answer: boolean; explanation: string };
 type Question = {
@@ -36,40 +38,10 @@ type Question = {
   groupIndex: number; group: string; page: number; negated: boolean;
   prompt: string; statements: Statement[];
 };
-type Tab = "study" | "progress" | "guide";
+type Tab = "study" | "progress" | "guide" | "exam";
 type SessionKind = "daily" | "custom" | "study_more";
 
 const QUESTIONS = rawQuestions as Question[];
-const MATH_DELIMITER = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
-
-const MathText = memo(function MathText({ text }: { text: string }) {
-  return text.split(MATH_DELIMITER).map((part, index) => {
-    const displayMode = part.startsWith("\\[") && part.endsWith("\\]");
-    const inlineMode = part.startsWith("\\(") && part.endsWith("\\)");
-
-    if (!displayMode && !inlineMode) {
-      return part;
-    }
-
-    const expression = part.slice(2, -2);
-    const html = katex.renderToString(expression, {
-      displayMode,
-      output: "htmlAndMathml",
-      strict: "warn",
-      throwOnError: false,
-      trust: false,
-    });
-
-    return (
-      <span
-        className={displayMode ? "math-display" : "math-inline"}
-        // KaTeX escapes untrusted commands and emits accessible MathML alongside HTML.
-        dangerouslySetInnerHTML={{ __html: html }}
-        key={`${index}-${expression}`}
-      />
-    );
-  });
-});
 
 function buildQuestionQueue(
   candidates: { item: Question; index: number }[],
@@ -108,7 +80,7 @@ function getAttemptSource(sessionKind: SessionKind): AttemptSource {
 export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const pathname = usePathname();
   const router = useRouter();
-  const tab: Tab = pathname === "/progress" ? "progress" : pathname === "/learning-guide" ? "guide" : "study";
+  const tab: Tab = pathname === "/practice-exam" ? "exam" : pathname === "/progress" ? "progress" : pathname === "/learning-guide" ? "guide" : "study";
   const {
     histories, legacyReviews, hydrated, user, syncStatus, saveAttempt, resetHistory,
     requestMagicLink, signInWithGoogle, signOut,
@@ -352,6 +324,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
         </Link>
         <nav aria-label="Primary navigation">
           <Link className={`nav-item ${tab === "study" ? "active" : ""}`} aria-current={tab === "study" ? "page" : undefined} href="/"><BookOpen aria-hidden="true" /> Study</Link>
+          <Link className={`nav-item ${tab === "exam" ? "active" : ""}`} aria-current={tab === "exam" ? "page" : undefined} href="/practice-exam"><ClipboardCheck aria-hidden="true" /> Practice Exam</Link>
           <Link className={`nav-item ${tab === "progress" ? "active" : ""}`} aria-current={tab === "progress" ? "page" : undefined} href="/progress"><ChartBar aria-hidden="true" /> Progress</Link>
           <Link className={`nav-item ${tab === "guide" ? "active" : ""}`} aria-current={tab === "guide" ? "page" : undefined} href="/learning-guide"><BookMarked aria-hidden="true" /> Learning guide</Link>
         </nav>
@@ -364,9 +337,9 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : sessionKind === "study_more" ? `Study 10 more · Exam ${DAILY_EXAM}` : "Study session") : tab === "progress" ? "Learning signal" : "How to use the pool"}</span>
-            <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : sessionKind === "study_more" ? "Keep the momentum going." : "Practice with intent.") : tab === "progress" ? "See what needs attention." : "Make every question useful."}</h1>
-            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Due reviews come first, followed by unseen questions.") : tab === "progress" ? "Coverage and confidence, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
+            <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : sessionKind === "study_more" ? `Study 10 more · Exam ${DAILY_EXAM}` : "Study session") : tab === "progress" ? "Learning signal" : tab === "exam" ? "The exam room" : "How to use the pool"}</span>
+            <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : sessionKind === "study_more" ? "Keep the momentum going." : "Practice with intent.") : tab === "progress" ? "See what needs attention." : tab === "exam" ? "Put your preparation to the test." : "Make every question useful."}</h1>
+            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Due reviews come first, followed by unseen questions.") : tab === "progress" ? "Coverage and confidence, organized by domain." : tab === "exam" ? "A full-length rehearsal, at your own desk." : "A simple loop for turning recall into durable understanding."}</p>
           </div>
           <div className="topbar-actions">
             <ThemeToggle />
@@ -378,9 +351,11 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             ) : (
               <button className="sync-button" onClick={() => { setAuthMessage(""); setAuthOpen(true); }}><Cloud aria-hidden="true" /> Sync progress</button>
             )}
-            <button className="new-session" onClick={() => setSetupOpen(true)}>New session <Plus aria-hidden="true" /></button>
+            {tab !== "exam" && <button className="new-session" onClick={() => setSetupOpen(true)}>New session <Plus aria-hidden="true" /></button>}
           </div>
         </header>
+
+        {tab === "exam" && hydrated && <PracticeExam key={user?.id ?? "device"} owner={user?.id ?? "device"} />}
 
         {tab === "study" && !sessionDone && (
           <div className="study-layout">

@@ -11,7 +11,8 @@
     "catalog:seed": "node scripts/generate_catalog_seed.mjs",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:exam": "node --experimental-strip-types --test tests/practice-exam.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.5",
