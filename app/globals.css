@@ -35,8 +35,8 @@
   --surface-hover: #fafbf9;
   --card-hover: #fbfcfa;
   --border-hover: #c5cbc4;
-  --rating-background: #f2f6ed;
-  --rating-border: #cbd8c5;
+  --answer-background: #f2f6ed;
+  --answer-border: #cbd8c5;
   --table-border: #eceeea;
   --soft-on-primary: #b8c8c1;
   --guide-copy: #c6d3cd;
@@ -89,8 +89,8 @@
   --surface-hover: #1d2721;
   --card-hover: #202a24;
   --border-hover: #46534c;
-  --rating-background: #1b2820;
-  --rating-border: #385744;
+  --answer-background: #1b2820;
+  --answer-border: #385744;
   --table-border: #26302a;
   --soft-on-primary: #b8ccc3;
   --guide-copy: #c8d7d0;
@@ -288,16 +288,11 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .check-button:hover, .start-button:hover { background: var(--primary-solid-hover); }
 .check-button svg, .start-button svg { transition: transform 180ms var(--ease-out); }
 .check-button:hover svg, .start-button:hover svg { transform: translateX(2px); }
-.rating-panel { display: grid; grid-template-columns: minmax(150px, .65fr) 1.35fr; gap: 18px; align-items: center; margin-top: 20px; padding: 16px; border: 1px solid var(--rating-border); border-radius: 12px; background: var(--rating-background); animation: reveal-in 280ms var(--ease-out) both; }
-.rating-panel > div:first-child { display: flex; align-items: center; gap: 11px; }
-.rating-score { font-size: 29px; font-weight: 650; letter-spacing: -.05em; }
-.rating-panel p { margin: 0; color: var(--muted-foreground); font-size: 9px; line-height: 1.45; }
-.rating-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.rating-buttons button { display: grid; grid-template-columns: auto 1fr; gap: 2px 7px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; background: var(--card); text-align: left; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease; }
-.rating-buttons button:hover { border-color: var(--border-hover); background: var(--card-hover); }
-.rating-buttons kbd { grid-row: 1 / 3; align-self: center; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--muted); color: var(--muted-foreground); font-family: var(--font-geist-mono); font-size: 8px; }
-.rating-buttons strong { font-size: 9px; }
-.rating-buttons small { color: var(--muted-foreground); font-size: 8px; }
+.answer-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; margin-top: 20px; padding: 16px; border: 1px solid var(--answer-border); border-radius: 12px; background: var(--answer-background); animation: reveal-in 280ms var(--ease-out) both; }
+.answer-result > div { display: flex; align-items: center; gap: 11px; }
+.answer-score { font-size: 29px; font-weight: 650; letter-spacing: -.05em; white-space: nowrap; }
+.answer-result p { margin: 0; color: var(--muted-foreground); font-size: 9px; line-height: 1.45; }
+.answer-result .check-button { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 
 .session-panel { padding: 19px; border: 1px solid var(--border); border-radius: 16px; background: color-mix(in srgb, var(--card) 82%, var(--background)); box-shadow: var(--shadow-sm); }
 .session-panel .eyebrow { color: var(--muted-foreground); }
@@ -322,7 +317,7 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .completion-mark svg { width: 24px; height: 24px; stroke-width: 2; }
 .completion-card h2 { margin: 9px 0 12px; font-size: 36px; font-weight: 630; letter-spacing: -.045em; }
 .completion-card p { max-width: 520px; margin: 0 auto 25px; color: var(--muted-foreground); font-size: 12px; line-height: 1.65; }
-.completion-card > div { display: flex; justify-content: center; gap: 10px; }
+.completion-card > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .secondary-button { min-height: 39px; padding: 0 15px; border: 1px solid var(--border); border-radius: 9px; background: var(--card); color: inherit; font-size: 10px; font-weight: 620; text-decoration: none; }
 .secondary-button:hover { border-color: var(--border-hover); background: var(--card-hover); }
 
@@ -431,7 +426,8 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
   .guide-hero { grid-template-columns: 1fr; }
   .giant-number { font-size: 68px; }
   .authority-grid { grid-template-columns: 1fr; }
-  .rating-panel { grid-template-columns: 1fr; }
+  .answer-result { grid-template-columns: 1fr; }
+  .answer-result .check-button { justify-content: center; }
   .explanation { padding-left: 13px; }
 }
 
@@ -460,7 +456,6 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
   .statement { grid-template-columns: 28px minmax(0, 1fr) 21px; gap: 9px; padding: 11px 9px; font-size: 11px; }
   .question-actions { gap: 12px; }
   .check-button { flex: 1; }
-  .rating-buttons { grid-template-columns: repeat(2, 1fr); }
   .completion-card { margin-top: 5vh; padding: 34px 18px; }
   .completion-card > div { flex-direction: column; }
   .metric-grid { grid-template-columns: 1fr 1fr; }

@@ -3,7 +3,7 @@
 Next.js study interface for the bundled 938-question ML4T pool. Questions,
 statements, explanations, and answer keys remain in `app/data/questions.json`;
 Supabase stores only authentication records, the tiny code/key catalog, and
-aggregated study progress.
+answer attempts and a legacy aggregate-progress baseline.
 
 ## Local setup
 
@@ -15,9 +15,11 @@ aggregated study progress.
    key in a `NEXT_PUBLIC_` variable.
 4. Set `NEXT_PUBLIC_SITE_URL=http://localhost:3000` and run `npm run dev`.
 
-Unauthenticated study remains available and uses
-`ml4t-recall-progress-v1` in localStorage. An authenticated user gets a
-user-scoped local cache plus batched Supabase synchronization.
+Unauthenticated study remains available and stores append-only answer attempts
+under `ml4t-recall-answer-history-v2` in localStorage. An authenticated user
+gets a user-scoped local cache plus batched, idempotent Supabase synchronization.
+The older `ml4t-recall-progress-v1` cache is read as a legacy baseline so an
+existing user's coverage and aggregate accuracy are not discarded.
 
 ## Supabase
 
@@ -28,6 +30,12 @@ publishable key in `.env.local`/deployment settings rather than source control.
 
 - `supabase/migrations` contains the schema, constraints, indexes, grants, and
   RLS policies.
+- `user_question_attempts` stores each submitted five-statement answer or skip
+  as a compact bit mask, score, source, skip flag, and timestamp. Skips complete
+  the current session but do not affect accuracy or review scheduling. Attempts
+  are immutable except when a user resets all history.
+- `user_question_progress` is retained only to preserve aggregate progress from
+  releases before answer history was introduced; new answers do not update it.
 - `app/data/question-keys.json` is the immutable bundled code→`smallint`
   manifest; it contains no question content.
 - `supabase/seed.sql` contains the same stable keys and question codes.

@@ -18,9 +18,14 @@ import {
   X,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  selectedIndexesToMask,
+  summarizeQuestion,
+  type AttemptSource,
+  type QuestionProgress,
+} from "../lib/answer-history";
 import { DAILY_EXAM, getDailyDateKey, getDailyQuestionIndexes } from "../lib/daily-questions";
-import type { Review } from "../lib/progress";
-import { useProgressSync } from "./use-progress-sync";
+import { useAnswerHistorySync } from "./use-answer-history-sync";
 import questionKeys from "./data/question-keys.json";
 import rawQuestions from "./data/questions.json";
 import ThemeToggle from "./theme-toggle";
@@ -32,10 +37,9 @@ type Question = {
   prompt: string; statements: Statement[];
 };
 type Tab = "study" | "progress" | "guide";
-type Rating = "again" | "hard" | "good" | "easy";
+type SessionKind = "daily" | "custom" | "study_more";
 
 const QUESTIONS = rawQuestions as Question[];
-const DAY = 86_400_000;
 const MATH_DELIMITER = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
 
 const MathText = memo(function MathText({ text }: { text: string }) {
@@ -67,23 +71,58 @@ const MathText = memo(function MathText({ text }: { text: string }) {
   });
 });
 
+function buildQuestionQueue(
+  candidates: { item: Question; index: number }[],
+  progressByQuestion: Record<string, QuestionProgress>,
+  now: number,
+  unseenFirst = false,
+) {
+  return candidates
+    .map((candidate) => ({ ...candidate, tieBreaker: Math.random() }))
+    .sort((left, right) => {
+      const leftProgress = progressByQuestion[left.item.id];
+      const rightProgress = progressByQuestion[right.item.id];
+      const priority = (progress: QuestionProgress | undefined) => {
+        if (!progress) return unseenFirst ? 0 : 1;
+        if (progress.nextDue <= now) return unseenFirst ? 1 : 0;
+        return 2;
+      };
+      const priorityDifference = priority(leftProgress) - priority(rightProgress);
+      if (priorityDifference) return priorityDifference;
+      if (leftProgress && rightProgress) {
+        return leftProgress.nextDue - rightProgress.nextDue
+          || leftProgress.attempts - rightProgress.attempts
+          || left.tieBreaker - right.tieBreaker;
+      }
+      return left.tieBreaker - right.tieBreaker;
+    })
+    .map(({ index }) => index);
+}
+
+function getAttemptSource(sessionKind: SessionKind): AttemptSource {
+  if (sessionKind === "daily") return "daily";
+  if (sessionKind === "study_more") return "study_more";
+  return "practice";
+}
+
 export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const tab: Tab = pathname === "/progress" ? "progress" : pathname === "/learning-guide" ? "guide" : "study";
   const {
-    reviews, hydrated, user, syncStatus, saveReview, resetReviews,
+    histories, legacyReviews, hydrated, user, syncStatus, saveAttempt, resetHistory,
     requestMagicLink, signInWithGoogle, signOut,
-  } = useProgressSync(questionKeys);
+  } = useAnswerHistorySync(questionKeys);
   const dailyQuestionIndexes = useMemo(() => getDailyQuestionIndexes(QUESTIONS, dailyDateKey), [dailyDateKey]);
   const [session, setSession] = useState<number[]>(() => dailyQuestionIndexes);
-  const [sessionKind, setSessionKind] = useState<"daily" | "custom">("daily");
+  const [sessionKind, setSessionKind] = useState<SessionKind>("daily");
   const [dailyReplayStarted, setDailyReplayStarted] = useState(false);
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<number[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [sessionCorrect, setSessionCorrect] = useState(0);
   const [sessionStatements, setSessionStatements] = useState(0);
+  const [sessionSkipped, setSessionSkipped] = useState(0);
   const [sessionDone, setSessionDone] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [examFilter, setExamFilter] = useState("all");
@@ -101,30 +140,59 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   }, [hydrated]);
 
   useEffect(() => {
-    if (!hydrated || dailyReplayStarted || sessionKind !== "daily" || sessionDone) return;
+    if (
+      !hydrated
+      || dailyReplayStarted
+      || sessionKind !== "daily"
+      || sessionDone
+      || current !== 0
+      || revealed
+      || sessionStatements > 0
+    ) return;
 
-    const completedReviews = dailyQuestionIndexes.map((index) => reviews[QUESTIONS[index].id]);
-    const completedToday = completedReviews.every((review) => (
-      review && getDailyDateKey(new Date(review.lastReviewed)) === dailyDateKey
-    ));
-    if (!completedToday) return;
+    const completedAttempts = dailyQuestionIndexes.map((index) => {
+      const questionCode = QUESTIONS[index].id;
+      const dailyAttempt = histories[questionCode]?.find((attempt) => (
+        attempt.source === "daily"
+        && getDailyDateKey(new Date(attempt.answeredAt)) === dailyDateKey
+      ));
+      if (dailyAttempt) return dailyAttempt;
 
-    const restoredCorrect = completedReviews.reduce((sum, review) => sum + review.lastScore, 0);
+      const legacy = legacyReviews[questionCode];
+      return legacy && getDailyDateKey(new Date(legacy.lastReviewed)) === dailyDateKey
+        ? { score: legacy.lastScore, skipped: false }
+        : null;
+    });
+    if (completedAttempts.some((attempt) => attempt === null)) return;
+
+    const restoredCorrect = completedAttempts.reduce<number>(
+      (sum, attempt) => sum + (attempt?.skipped ? 0 : (attempt?.score ?? 0)),
+      0,
+    );
+    const restoredSkipped = completedAttempts.filter((attempt) => attempt?.skipped).length;
     queueMicrotask(() => {
       setSessionCorrect(restoredCorrect);
-      setSessionStatements(dailyQuestionIndexes.length * 5);
+      setSessionStatements((dailyQuestionIndexes.length - restoredSkipped) * 5);
+      setSessionSkipped(restoredSkipped);
       setSessionDone(true);
     });
-  }, [dailyDateKey, dailyQuestionIndexes, dailyReplayStarted, hydrated, reviews, sessionDone, sessionKind]);
+  }, [current, dailyDateKey, dailyQuestionIndexes, dailyReplayStarted, histories, hydrated, legacyReviews, revealed, sessionDone, sessionKind, sessionStatements]);
 
   const question = QUESTIONS[session[current] ?? 0];
   const result = useMemo(() => question.statements.map((statement, index) => selected.includes(index) === statement.answer), [question, selected]);
   const resultCount = result.filter(Boolean).length;
-  const reviewedCount = Object.keys(reviews).length;
-  const totalCorrect = Object.values(reviews).reduce((sum, review) => sum + review.statementCorrect, 0);
-  const totalStatements = Object.values(reviews).reduce((sum, review) => sum + review.statementTotal, 0);
+  const progressByQuestion = useMemo(() => Object.fromEntries(
+    QUESTIONS.flatMap((item) => {
+      const progress = summarizeQuestion(histories[item.id], legacyReviews[item.id]);
+      return progress ? [[item.id, progress] as const] : [];
+    }),
+  ) as Record<string, QuestionProgress>, [histories, legacyReviews]);
+  const reviewedCount = Object.keys(progressByQuestion).length;
+  const totalCorrect = Object.values(progressByQuestion).reduce((sum, progress) => sum + progress.statementCorrect, 0);
+  const totalStatements = Object.values(progressByQuestion).reduce((sum, progress) => sum + progress.statementTotal, 0);
   const overallAccuracy = totalStatements ? Math.round((totalCorrect / totalStatements) * 100) : 0;
-  const dueCount = Object.values(reviews).filter((review) => review.due <= now).length + (QUESTIONS.length - reviewedCount);
+  const dueReviewCount = Object.values(progressByQuestion).filter((progress) => progress.nextDue <= now).length;
+  const unseenCount = QUESTIONS.length - reviewedCount;
   const sessionAccuracy = sessionStatements ? Math.round((sessionCorrect / sessionStatements) * 100) : 0;
 
   const domainOptions = useMemo(() => {
@@ -138,24 +206,31 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   }, [examFilter, areaFilter]);
 
   const startSession = () => {
-    const now = Date.now();
+    const startedAt = Date.now();
     const candidates = QUESTIONS.map((item, index) => ({ item, index }))
       .filter(({ item }) => examFilter === "all" || String(item.exam) === examFilter)
       .filter(({ item }) => areaFilter === "all" || item.area === areaFilter)
-      .filter(({ item }) => domainFilter === "all" || `${item.exam}-${item.area}-${item.domainIndex}` === domainFilter)
-      .sort((a, b) => {
-        const aReview = reviews[a.item.id];
-        const bReview = reviews[b.item.id];
-        const aDue = aReview?.due ?? 0;
-        const bDue = bReview?.due ?? 0;
-        if ((aDue <= now) !== (bDue <= now)) return aDue <= now ? -1 : 1;
-        return (aReview?.attempts ?? 0) - (bReview?.attempts ?? 0) || Math.random() - 0.5;
-      });
-    setSession(candidates.slice(0, sessionSize).map(({ index }) => index));
+      .filter(({ item }) => domainFilter === "all" || `${item.exam}-${item.area}-${item.domainIndex}` === domainFilter);
+    setSession(
+      buildQuestionQueue(candidates, progressByQuestion, startedAt).slice(0, sessionSize),
+    );
     setSessionKind("custom");
     setDailyReplayStarted(false);
     setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
-    setSessionCorrect(0); setSessionStatements(0); setSetupOpen(false); router.push("/");
+    setSessionCorrect(0); setSessionStatements(0); setSessionSkipped(0); setSetupOpen(false); router.push("/");
+  };
+
+  const startStudyMore = () => {
+    const startedAt = Date.now();
+    const candidates = QUESTIONS.map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.exam === DAILY_EXAM);
+    setSession(
+      buildQuestionQueue(candidates, progressByQuestion, startedAt, true).slice(0, 10),
+    );
+    setSessionKind("study_more");
+    setDailyReplayStarted(false);
+    setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
+    setSessionCorrect(0); setSessionStatements(0); setSessionSkipped(0); router.push("/");
   };
 
   const restartDaily = () => {
@@ -163,43 +238,45 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     setSessionKind("daily");
     setDailyReplayStarted(true);
     setCurrent(0); setSelected([]); setRevealed(false); setSessionDone(false);
-    setSessionCorrect(0); setSessionStatements(0); router.push("/");
+    setSessionCorrect(0); setSessionStatements(0); setSessionSkipped(0); router.push("/");
   };
 
   const checkAnswer = useCallback(() => {
     if (revealed || sessionDone) return;
+    const answeredAt = Date.now();
+    saveAttempt(
+      question.id,
+      selectedIndexesToMask(selected),
+      resultCount,
+      getAttemptSource(sessionKind),
+      answeredAt,
+    );
+    setNow(answeredAt);
     setRevealed(true);
     setSessionCorrect((value) => value + resultCount);
     setSessionStatements((value) => value + 5);
-  }, [revealed, resultCount, sessionDone]);
+  }, [question.id, resultCount, revealed, saveAttempt, selected, sessionDone, sessionKind]);
 
-  const rate = useCallback((rating: Rating, score = resultCount) => {
-    const previous = reviews[question.id];
-    const previousInterval = previous?.interval ?? 0;
-    const intervals: Record<Rating, number> = {
-      again: 0.0007,
-      hard: Math.max(1, previousInterval ? previousInterval * 1.2 : 1),
-      good: Math.max(2, previousInterval ? previousInterval * 2.5 : 2),
-      easy: Math.max(5, previousInterval ? previousInterval * 3.5 : 5),
-    };
-    const easeChange: Record<Rating, number> = { again: -0.2, hard: -0.1, good: 0, easy: 0.15 };
-    const interval = intervals[rating];
-    const reviewedAt = Date.now();
-    const review: Review = {
-      attempts: (previous?.attempts ?? 0) + 1,
-      statementCorrect: (previous?.statementCorrect ?? 0) + score,
-      statementTotal: (previous?.statementTotal ?? 0) + 5,
-      due: reviewedAt + interval * DAY,
-      interval,
-      ease: Math.max(1.3, Math.min(3, (previous?.ease ?? 2.5) + easeChange[rating])),
-      lastScore: score,
-      lastReviewed: reviewedAt,
-    };
-    saveReview(question.id, review);
-    setNow(reviewedAt);
+  const nextQuestion = useCallback(() => {
     if (current + 1 >= session.length) setSessionDone(true);
     else { setCurrent((value) => value + 1); setSelected([]); setRevealed(false); }
-  }, [current, question.id, resultCount, reviews, saveReview, session.length]);
+  }, [current, session.length]);
+
+  const skipQuestion = useCallback(() => {
+    if (revealed || sessionDone) return;
+    const skippedAt = Date.now();
+    saveAttempt(
+      question.id,
+      0,
+      0,
+      getAttemptSource(sessionKind),
+      skippedAt,
+      true,
+    );
+    setNow(skippedAt);
+    setSessionSkipped((value) => value + 1);
+    nextQuestion();
+  }, [nextQuestion, question.id, revealed, saveAttempt, sessionDone, sessionKind]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -209,35 +286,39 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
         return;
       }
       if (setupOpen || authOpen || tab !== "study" || sessionDone) return;
+      if (
+        event.key === "Enter"
+        && event.target instanceof HTMLElement
+        && event.target.closest("button, a, input, select, textarea")
+      ) return;
+      if (event.repeat) return;
       if (!revealed && /^[1-5]$/.test(event.key)) {
         const index = Number(event.key) - 1;
         setSelected((items) => items.includes(index) ? items.filter((item) => item !== index) : [...items, index]);
       }
       if (!revealed && event.key === "Enter") checkAnswer();
-      if (revealed) {
-        const keyRatings: Record<string, Rating> = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
-        if (keyRatings[event.key]) rate(keyRatings[event.key]);
-      }
+      if (revealed && event.key === "Enter") nextQuestion();
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [authOpen, checkAnswer, rate, revealed, sessionDone, setupOpen, tab]);
+  }, [authOpen, checkAnswer, nextQuestion, revealed, sessionDone, setupOpen, tab]);
 
   const domainStats = useMemo(() => {
     const rows = new Map<string, { label: string; area: string; reviewed: number; correct: number; total: number; due: number }>();
     QUESTIONS.forEach((item) => {
       const key = `${item.exam}-${item.area}-${item.domainIndex}`;
       const row = rows.get(key) ?? { label: `Exam ${item.exam} · ${item.domain}`, area: item.area, reviewed: 0, correct: 0, total: 0, due: 0 };
-      const review = reviews[item.id];
-      if (review) { row.reviewed += 1; row.correct += review.statementCorrect; row.total += review.statementTotal; if (review.due <= now) row.due += 1; }
+      const progress = progressByQuestion[item.id];
+      if (progress) { row.reviewed += 1; row.correct += progress.statementCorrect; row.total += progress.statementTotal; if (progress.nextDue <= now) row.due += 1; }
       rows.set(key, row);
     });
     return [...rows.values()].sort((a, b) => (a.total ? a.correct / a.total : -1) - (b.total ? b.correct / b.total : -1));
-  }, [reviews, now]);
+  }, [progressByQuestion, now]);
 
   const resetProgress = () => {
-    const scope = user ? "synced review history on every device" : "device-local review history";
-    if (window.confirm(`Reset all ${scope}? This cannot be undone.`)) void resetReviews();
+    if (!hydrated || syncStatus === "syncing") return;
+    const scope = user ? "synced answer history on every device" : "device-local answer history";
+    if (window.confirm(`Reset all ${scope}? This cannot be undone.`)) void resetHistory();
   };
 
   const sendMagicLink = async (event: React.FormEvent) => {
@@ -275,7 +356,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
           <Link className={`nav-item ${tab === "guide" ? "active" : ""}`} aria-current={tab === "guide" ? "page" : undefined} href="/learning-guide"><BookMarked aria-hidden="true" /> Learning guide</Link>
         </nav>
         <div className="sidebar-stats">
-          <span>{reviewedCount}<small>seen</small></span><span>{dueCount}<small>ready</small></span>
+          <span>{reviewedCount}<small>seen</small></span><span>{unseenCount}<small>unseen</small></span>
         </div>
         <div className="sidebar-note"><span className={`status-dot ${syncStatus}`} /><p><strong>{syncLabel}</strong><br />{QUESTIONS.length} questions in your library</p></div>
       </aside>
@@ -283,9 +364,9 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : "Study session") : tab === "progress" ? "Learning signal" : "How to use the pool"}</span>
-            <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : "Practice with intent.") : tab === "progress" ? "See what needs attention." : "Make every question useful."}</h1>
-            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : "Judge each claim, then learn from the reasoning.") : tab === "progress" ? "Coverage and confidence, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
+            <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : sessionKind === "study_more" ? `Study 10 more · Exam ${DAILY_EXAM}` : "Study session") : tab === "progress" ? "Learning signal" : "How to use the pool"}</span>
+            <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : sessionKind === "study_more" ? "Keep the momentum going." : "Practice with intent.") : tab === "progress" ? "See what needs attention." : "Make every question useful."}</h1>
+            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Due reviews come first, followed by unseen questions.") : tab === "progress" ? "Coverage and confidence, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
           </div>
           <div className="topbar-actions">
             <ThemeToggle />
@@ -334,39 +415,34 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
                 })}
               </div>
               {!revealed ? (
-                <div className="question-actions"><button className="skip-button" onClick={() => { setSessionStatements((value) => value + 5); rate("again", 0); }}>Skip for now</button><button className="check-button" onClick={checkAnswer}>Check all 5 statements <ArrowRight aria-hidden="true" /></button></div>
+                <div className="question-actions"><button className="skip-button" onClick={skipQuestion}>Skip for now</button><button className="check-button" key="check-answer" onClick={checkAnswer}>Check all 5 statements <ArrowRight aria-hidden="true" /></button></div>
               ) : (
-                <div className="rating-panel">
-                  <div><span className="rating-score">{resultCount}/5</span><p>{resultCount === 5 ? "Exact match. Can you explain each one?" : "Review the reasoning, then schedule the revisit."}</p></div>
-                  <div className="rating-buttons">
-                    <button onClick={() => rate("again")}><kbd>1</kbd><strong>Again</strong><small>1 min</small></button>
-                    <button onClick={() => rate("hard")}><kbd>2</kbd><strong>Hard</strong><small>1 day</small></button>
-                    <button onClick={() => rate("good")}><kbd>3</kbd><strong>Good</strong><small>{reviews[question.id]?.interval ? `${Math.ceil(reviews[question.id].interval * 2.5)} days` : "2 days"}</small></button>
-                    <button onClick={() => rate("easy")}><kbd>4</kbd><strong>Easy</strong><small>{reviews[question.id]?.interval ? `${Math.ceil(reviews[question.id].interval * 3.5)} days` : "5 days"}</small></button>
-                  </div>
+                <div className="answer-result">
+                  <div><span className="answer-score">{resultCount}/5</span><p>{resultCount === 5 ? "Saved. Your next review was scheduled automatically." : "Saved. This question will return tomorrow."}</p></div>
+                  <button className="check-button" key="next-question" onClick={nextQuestion}>{current + 1 >= session.length ? "Finish session" : "Next question"} <ArrowRight aria-hidden="true" /></button>
                 </div>
               )}
             </article>
 
             <aside className="session-panel">
-              <span className="eyebrow">{sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : "This session"}</span>
+              <span className="eyebrow">{sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : sessionKind === "study_more" ? "Study 10 more" : "This session"}</span>
               <div className="score-ring" style={{ "--score": `${sessionAccuracy || 0}%` } as React.CSSProperties}><strong>{sessionStatements ? `${sessionAccuracy}%` : "—"}</strong><span>accuracy</span></div>
-              <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Statements</dt><dd>{sessionStatements}</dd></div><div><dt>Ready to learn</dt><dd>{dueCount}</dd></div></dl>
+              <dl><div><dt>Remaining</dt><dd>{session.length - current}</dd></div><div><dt>Statements</dt><dd>{sessionStatements}</dd></div><div><dt>Due reviews</dt><dd>{dueReviewCount}</dd></div></dl>
               <div className="focus-box"><span>Current domain</span><strong>{question.domain}</strong><small>{question.area} · Exam {question.exam}</small></div>
-              <p className="key-hint"><kbd>1–5</kbd> toggle · <kbd>Enter</kbd> check</p>
+              <p className="key-hint"><kbd>1–5</kbd> toggle · <kbd>Enter</kbd> {revealed ? "next" : "check"}</p>
             </aside>
           </div>
         )}
 
         {tab === "study" && sessionDone && (
           <section className="completion-card">
-            <span className="completion-mark"><Check aria-hidden="true" /></span><span className="eyebrow">{sessionKind === "daily" ? "Completed for today" : "Session complete"}</span>
-            <h2>{sessionAccuracy}% statement accuracy</h2>
-            <p>{sessionKind === "daily" ? `You completed today’s shared Exam ${DAILY_EXAM} set. Your results are saved to your own progress history.` : `You worked through ${session.length} questions and identified which concepts need another look. Revisit the explanations, then connect those ideas back to the course materials.`}</p>
+            <span className="completion-mark"><Check aria-hidden="true" /></span><span className="eyebrow">{sessionKind === "daily" ? "Completed for today" : sessionKind === "study_more" ? "Extra study complete" : "Session complete"}</span>
+            <h2>{sessionStatements ? `${sessionAccuracy}% statement accuracy` : "No questions answered"}</h2>
+            <p>{sessionKind === "daily" ? `You completed today’s shared Exam ${DAILY_EXAM} set: ${session.length - sessionSkipped} answered and ${sessionSkipped} skipped. Submitted answers are saved and review timing is updated automatically.` : `You worked through ${session.length} questions: ${session.length - sessionSkipped} answered and ${sessionSkipped} skipped. Submitted answers are saved and imperfect answers will return in the review queue.`}</p>
             {sessionKind === "daily" ? (
-              <div><button className="check-button" onClick={restartDaily}><RotateCcw aria-hidden="true" /> Do Daily 5 again</button><button className="secondary-button" onClick={() => setSetupOpen(true)}>Build custom session</button><Link className="secondary-button" href="/progress">View progress</Link></div>
+              <div><button className="check-button" onClick={startStudyMore}>Study 10 more <ArrowRight aria-hidden="true" /></button><button className="secondary-button" onClick={restartDaily}><RotateCcw aria-hidden="true" /> Replay Daily 5</button><button className="secondary-button" onClick={() => setSetupOpen(true)}>Custom session</button><Link className="secondary-button" href="/progress">View progress</Link></div>
             ) : (
-              <div><button className="check-button" onClick={() => setSetupOpen(true)}>Build another session <ArrowRight aria-hidden="true" /></button><Link className="secondary-button" href="/progress">View domain progress</Link></div>
+              <div><button className="check-button" onClick={startStudyMore}>Study 10 more <ArrowRight aria-hidden="true" /></button><button className="secondary-button" onClick={() => setSetupOpen(true)}>Build custom session</button><Link className="secondary-button" href="/progress">View domain progress</Link></div>
             )}
           </section>
         )}
@@ -375,19 +451,19 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
           <section className="progress-view" id="progress">
             <div className="metric-grid">
               <article><span>Questions seen</span><strong>{reviewedCount}</strong><small>of {QUESTIONS.length}</small></article>
-              <article><span>Statement accuracy</span><strong>{overallAccuracy || "—"}{overallAccuracy ? "%" : ""}</strong><small>across all attempts</small></article>
-              <article><span>Available now</span><strong>{dueCount}</strong><small>new and ready-to-revisit questions</small></article>
-              <article><span>Learning coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{user ? "synced across devices" : "device-local progress"}</small></article>
+              <article><span>Statement accuracy</span><strong>{totalStatements ? `${overallAccuracy}%` : "—"}</strong><small>across all saved attempts</small></article>
+              <article><span>Due reviews</span><strong>{dueReviewCount}</strong><small>previous answers ready to revisit</small></article>
+              <article><span>Learning coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{unseenCount} unseen · {user ? "cloud synced" : "on this device"}</small></article>
             </div>
             <div className="domain-table-card">
-              <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest confidence first</h2></div><button className="text-button" onClick={resetProgress}><RotateCcw aria-hidden="true" /> Reset progress</button></div>
+              <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest confidence first</h2></div><button className="text-button" disabled={!hydrated || syncStatus === "syncing"} onClick={resetProgress}><RotateCcw aria-hidden="true" /> Reset progress</button></div>
               <div className="domain-table">
                 {domainStats.map((row) => {
                   const rowAccuracy = row.total ? Math.round((row.correct / row.total) * 100) : 0;
                   return <div className="domain-row" key={row.label}>
                     <div><span className="area-tag">{row.area === "Machine Learning" ? "ML" : "QF"}</span><strong>{row.label}</strong></div>
                     <div className="bar"><span style={{ width: `${rowAccuracy}%` }} /></div>
-                    <span>{row.total ? `${rowAccuracy}%` : "Not started"}</span><small>{row.reviewed} seen · {row.due} available</small>
+                    <span>{row.total ? `${rowAccuracy}%` : "Not started"}</span><small>{row.reviewed} seen · {row.due} due</small>
                   </div>;
                 })}
               </div>
@@ -421,7 +497,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             <fieldset><legend>Knowledge area</legend><div className="segmented">{[["all","Mixed"],["Machine Learning","Machine Learning"],["Quantitative Finance","Quant Finance"]].map(([value,label]) => <button key={value} className={areaFilter === value ? "selected" : ""} onClick={() => { setAreaFilter(value); setDomainFilter("all"); }}>{label}</button>)}</div></fieldset>
             <label className="select-label">Domain<select value={domainFilter} onChange={(event) => setDomainFilter(event.target.value)}><option value="all">All matching domains</option>{domainOptions.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
             <fieldset><legend>Questions</legend><div className="segmented compact">{[10,20,50].map((size) => <button key={size} className={sessionSize === size ? "selected" : ""} onClick={() => setSessionSize(size)}>{size}</button>)}</div></fieldset>
-            <div className="modal-note"><span><Sparkles aria-hidden="true" /></span><p><strong>Available-first sequencing</strong><br />New and ready-to-revisit questions appear before recently reviewed ones.</p></div>
+            <div className="modal-note"><span><Sparkles aria-hidden="true" /></span><p><strong>Review-first sequencing</strong><br />Due reviews appear first, followed by unseen questions and then future reviews.</p></div>
             <button className="start-button" onClick={startSession}>Start session <ArrowRight aria-hidden="true" /></button>
           </section>
         </div>
@@ -439,7 +515,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
               <button className="start-button" disabled={authBusy || !email.trim()}>{authBusy ? "Sending…" : "Email me a sign-in link"}<ArrowRight aria-hidden="true" /></button>
             </form>
             {authMessage && <p className="auth-message" role="status">{authMessage}</p>}
-            <p className="auth-footnote">Supabase stores only your account and compact per-question progress. Question text and answer keys stay bundled in this app.</p>
+            <p className="auth-footnote">Supabase stores only your account and answer history. Question text and answer keys stay bundled in this app.</p>
           </section>
         </div>
       )}
