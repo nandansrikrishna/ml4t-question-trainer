@@ -15,9 +15,10 @@ import {
   Plus,
   RotateCcw,
   Sparkles,
+  Settings,
   X,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   selectedIndexesToMask,
   summarizeQuestion,
@@ -29,6 +30,8 @@ import { useAnswerHistorySync } from "./use-answer-history-sync";
 import questionKeys from "./data/question-keys.json";
 import rawQuestions from "./data/questions.json";
 import ThemeToggle from "./theme-toggle";
+import StudyDialog from "./study-dialog";
+import { parseStudySession, sessionStorageKey, type StudySession } from "../lib/study-session";
 
 type Statement = { label: string; text: string; answer: boolean; explanation: string };
 type Question = {
@@ -40,6 +43,8 @@ type Tab = "study" | "progress" | "guide";
 type SessionKind = "daily" | "custom" | "study_more";
 
 const QUESTIONS = rawQuestions as Question[];
+const QUESTION_CODES = new Set(QUESTIONS.map((question) => question.id));
+const QUESTION_INDEX = new Map(QUESTIONS.map((question, index) => [question.id, index]));
 const MATH_DELIMITER = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
 
 const MathText = memo(function MathText({ text }: { text: string }) {
@@ -139,44 +144,92 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     if (hydrated) queueMicrotask(() => setNow(Date.now()));
   }, [hydrated]);
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [textScale, setTextScale] = useState(1);
+  const [loadedSessionKey, setLoadedSessionKey] = useState<string | null>(null);
+  const [resumed, setResumed] = useState(false);
+  const questionHeading = useRef<HTMLHeadingElement>(null);
+  const appRoot = useRef<HTMLElement>(null);
+  const actionLocked = useRef(false);
+  const nextLocked = useRef(false);
+  const storageKey = sessionStorageKey(user?.id);
+  const sessionContextKey = `${storageKey}:${dailyDateKey}`;
+  const ready = hydrated && loadedSessionKey === sessionContextKey;
+
   useEffect(() => {
-    if (
-      !hydrated
-      || dailyReplayStarted
-      || sessionKind !== "daily"
-      || sessionDone
-      || current !== 0
-      || revealed
-      || sessionStatements > 0
-    ) return;
+    try {
+      const scale = Number(localStorage.getItem("ml4t-recall-text-scale"));
+      if ([1, 1.15, 1.3].includes(scale)) queueMicrotask(() => setTextScale(scale));
+    } catch { /* Reading remains available when storage is blocked. */ }
+  }, []);
 
-    const completedAttempts = dailyQuestionIndexes.map((index) => {
-      const questionCode = QUESTIONS[index].id;
-      const dailyAttempt = histories[questionCode]?.find((attempt) => (
-        attempt.source === "daily"
-        && getDailyDateKey(new Date(attempt.answeredAt)) === dailyDateKey
-      ));
-      if (dailyAttempt) return dailyAttempt;
-
-      const legacy = legacyReviews[questionCode];
-      return legacy && getDailyDateKey(new Date(legacy.lastReviewed)) === dailyDateKey
-        ? { score: legacy.lastScore, skipped: false }
-        : null;
-    });
-    if (completedAttempts.some((attempt) => attempt === null)) return;
-
-    const restoredCorrect = completedAttempts.reduce<number>(
-      (sum, attempt) => sum + (attempt?.skipped ? 0 : (attempt?.score ?? 0)),
-      0,
-    );
-    const restoredSkipped = completedAttempts.filter((attempt) => attempt?.skipped).length;
+  useEffect(() => {
+    if (!hydrated || loadedSessionKey === sessionContextKey) return;
+    let saved: StudySession | null = null;
+    try { saved = parseStudySession(localStorage.getItem(storageKey), QUESTION_CODES, dailyDateKey); } catch { /* Start fresh. */ }
+    // History can reconstruct a partially completed Daily 5 even without a local
+    // session (for example, after signing in on a second device).
+    const dailyAttempts = new Map(dailyQuestionIndexes.map((index) => {
+      const code = QUESTIONS[index].id;
+      const attempt = histories[code]?.find((item) => item.source === "daily" && getDailyDateKey(new Date(item.answeredAt)) === dailyDateKey);
+      const legacy = legacyReviews[code];
+      return [index, attempt ?? (legacy && getDailyDateKey(new Date(legacy.lastReviewed)) === dailyDateKey ? { score: legacy.lastScore, skipped: false } : undefined)];
+    }));
+    const completed = dailyQuestionIndexes.filter((index) => dailyAttempts.get(index));
+    const remaining = dailyQuestionIndexes.filter((index) => !dailyAttempts.get(index));
+    const attempts = completed.map((index) => dailyAttempts.get(index)!);
     queueMicrotask(() => {
-      setSessionCorrect(restoredCorrect);
-      setSessionStatements((dailyQuestionIndexes.length - restoredSkipped) * 5);
-      setSessionSkipped(restoredSkipped);
-      setSessionDone(true);
+      setSession(saved ? saved.questionCodes.map((code) => QUESTION_INDEX.get(code)!) : [...completed, ...remaining]);
+      setSessionKind(saved?.kind ?? "daily");
+      setCurrent(saved?.current ?? Math.min(completed.length, dailyQuestionIndexes.length - 1));
+      setSelected(saved?.selected ?? []);
+      setRevealed(saved?.revealed ?? false);
+      setSessionDone(saved?.done ?? remaining.length === 0);
+      setSessionCorrect(saved?.correct ?? attempts.reduce((total, attempt) => total + (attempt.skipped ? 0 : attempt.score), 0));
+      setSessionStatements(saved?.statements ?? attempts.filter((attempt) => !attempt.skipped).length * 5);
+      setSessionSkipped(saved?.skipped ?? attempts.filter((attempt) => attempt.skipped).length);
+      setDailyReplayStarted(saved?.dailyReplay ?? false);
+      setResumed(saved ? !saved.done : completed.length > 0 && remaining.length > 0);
+      setLoadedSessionKey(sessionContextKey);
     });
-  }, [current, dailyDateKey, dailyQuestionIndexes, dailyReplayStarted, histories, hydrated, legacyReviews, revealed, sessionDone, sessionKind, sessionStatements]);
+  }, [hydrated, loadedSessionKey, storageKey, sessionContextKey, dailyDateKey, dailyQuestionIndexes, histories, legacyReviews]);
+
+  useEffect(() => {
+    if (!ready || !session.length) return;
+    const saved: StudySession = {
+      version: 1, dateKey: dailyDateKey, questionCodes: session.map((index) => QUESTIONS[index].id),
+      kind: sessionKind, current, selected, revealed, done: sessionDone,
+      correct: sessionCorrect, statements: sessionStatements, skipped: sessionSkipped, dailyReplay: dailyReplayStarted,
+    };
+    try { localStorage.setItem(storageKey, JSON.stringify(saved)); } catch { /* The current session remains usable in memory. */ }
+  }, [ready, storageKey, dailyDateKey, session, sessionKind, current, selected, revealed, sessionDone, sessionCorrect, sessionStatements, sessionSkipped, dailyReplayStarted]);
+
+  useEffect(() => {
+    actionLocked.current = false;
+    nextLocked.current = false;
+    if (ready && tab === "study" && !sessionDone) {
+      questionHeading.current?.focus({ preventScroll: true });
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [current, session, ready, tab, sessionDone]);
+
+  useEffect(() => {
+    const root = appRoot.current;
+    if (!root) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const property = entry.target.classList.contains("sidebar") ? "--navigation-height" : "--study-action-height";
+        root.style.setProperty(property, `${entry.target.getBoundingClientRect().height}px`);
+      }
+    });
+    root.querySelectorAll(".sidebar, .question-actions, .answer-result").forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [revealed, ready, tab, sessionDone]);
+
+  const changeTextScale = (scale: number) => {
+    setTextScale(scale);
+    try { localStorage.setItem("ml4t-recall-text-scale", String(scale)); } catch { /* Use the selected scale for this visit. */ }
+  };
 
   const question = QUESTIONS[session[current] ?? 0];
   const result = useMemo(() => question.statements.map((statement, index) => selected.includes(index) === statement.answer), [question, selected]);
@@ -206,6 +259,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   }, [examFilter, areaFilter]);
 
   const startSession = () => {
+    setResumed(false);
     const startedAt = Date.now();
     const candidates = QUESTIONS.map((item, index) => ({ item, index }))
       .filter(({ item }) => examFilter === "all" || String(item.exam) === examFilter)
@@ -221,6 +275,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   };
 
   const startStudyMore = () => {
+    setResumed(false);
     const startedAt = Date.now();
     const candidates = QUESTIONS.map((item, index) => ({ item, index }))
       .filter(({ item }) => item.exam === DAILY_EXAM);
@@ -234,6 +289,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   };
 
   const restartDaily = () => {
+    setResumed(false);
     setSession(dailyQuestionIndexes);
     setSessionKind("daily");
     setDailyReplayStarted(true);
@@ -242,7 +298,8 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   };
 
   const checkAnswer = useCallback(() => {
-    if (revealed || sessionDone) return;
+    if (!ready || revealed || sessionDone || actionLocked.current) return;
+    actionLocked.current = true;
     const answeredAt = Date.now();
     saveAttempt(
       question.id,
@@ -255,15 +312,19 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     setRevealed(true);
     setSessionCorrect((value) => value + resultCount);
     setSessionStatements((value) => value + 5);
-  }, [question.id, resultCount, revealed, saveAttempt, selected, sessionDone, sessionKind]);
+  }, [question.id, resultCount, revealed, saveAttempt, selected, sessionDone, sessionKind, ready]);
 
   const nextQuestion = useCallback(() => {
+    if (!ready || nextLocked.current) return;
+    nextLocked.current = true;
+    setResumed(false);
     if (current + 1 >= session.length) setSessionDone(true);
     else { setCurrent((value) => value + 1); setSelected([]); setRevealed(false); }
-  }, [current, session.length]);
+  }, [current, session.length, ready]);
 
   const skipQuestion = useCallback(() => {
-    if (revealed || sessionDone) return;
+    if (!ready || revealed || sessionDone || actionLocked.current) return;
+    actionLocked.current = true;
     const skippedAt = Date.now();
     saveAttempt(
       question.id,
@@ -276,7 +337,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     setNow(skippedAt);
     setSessionSkipped((value) => value + 1);
     nextQuestion();
-  }, [nextQuestion, question.id, revealed, saveAttempt, sessionDone, sessionKind]);
+  }, [nextQuestion, question.id, revealed, saveAttempt, sessionDone, sessionKind, ready]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -285,7 +346,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
         if (authOpen) setAuthOpen(false);
         return;
       }
-      if (setupOpen || authOpen || tab !== "study" || sessionDone) return;
+      if (!ready || settingsOpen || setupOpen || authOpen || tab !== "study" || sessionDone) return;
       if (
         event.key === "Enter"
         && event.target instanceof HTMLElement
@@ -301,7 +362,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [authOpen, checkAnswer, nextQuestion, revealed, sessionDone, setupOpen, tab]);
+  }, [authOpen, checkAnswer, nextQuestion, revealed, sessionDone, setupOpen, settingsOpen, tab, ready]);
 
   const domainStats = useMemo(() => {
     const rows = new Map<string, { label: string; area: string; reviewed: number; correct: number; total: number; due: number }>();
@@ -318,7 +379,10 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const resetProgress = () => {
     if (!hydrated || syncStatus === "syncing") return;
     const scope = user ? "synced answer history on every device" : "device-local answer history";
-    if (window.confirm(`Reset all ${scope}? This cannot be undone.`)) void resetHistory();
+    if (window.confirm(`Reset all ${scope}? This cannot be undone.`)) {
+      void resetHistory();
+      restartDaily();
+    }
   };
 
   const sendMagicLink = async (event: React.FormEvent) => {
@@ -344,7 +408,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
         : "On this device";
 
   return (
-    <main className="app-shell">
+    <main ref={appRoot} className={`app-shell ${tab === "study" && !sessionDone ? "studying" : ""}`} style={{ "--study-scale": textScale } as React.CSSProperties}>
       <aside className="sidebar">
         <Link className="brand-lockup" href="/" aria-label="ML4T Recall home">
           <Image className="brand-mark" src="/ml4t-learning-logo.png" alt="" width={48} height={48} />
@@ -362,13 +426,18 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
       </aside>
 
       <section className="workspace">
+        <div className="study-toolbar">
+          <div><strong>{sessionKind === "daily" ? "Daily 5" : sessionKind === "study_more" ? "Study more" : "Custom session"}</strong><span>{ready ? `Question ${current + 1} of ${session.length}` : "Loading session…"}</span></div>
+          <button className="sync-button" onClick={() => setSettingsOpen(true)} aria-label="Study settings and navigation"><Settings aria-hidden="true" /><span>Settings</span></button>
+        </div>
         <header className="topbar">
           <div>
             <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : sessionKind === "study_more" ? `Study 10 more · Exam ${DAILY_EXAM}` : "Study session") : tab === "progress" ? "Learning signal" : "How to use the pool"}</span>
             <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : sessionKind === "study_more" ? "Keep the momentum going." : "Practice with intent.") : tab === "progress" ? "See what needs attention." : "Make every question useful."}</h1>
-            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Due reviews come first, followed by unseen questions.") : tab === "progress" ? "Coverage and confidence, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
+            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Due reviews come first, followed by unseen questions.") : tab === "progress" ? "Coverage and accuracy, organized by domain." : "A simple loop for turning recall into durable understanding."}</p>
           </div>
           <div className="topbar-actions">
+            <button className="theme-toggle" onClick={() => setSettingsOpen(true)} aria-label="Study settings"><Settings aria-hidden="true" /></button>
             <ThemeToggle />
             {user ? (
               <div className="account-chip">
@@ -378,17 +447,19 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             ) : (
               <button className="sync-button" onClick={() => { setAuthMessage(""); setAuthOpen(true); }}><Cloud aria-hidden="true" /> Sync progress</button>
             )}
-            <button className="new-session" onClick={() => setSetupOpen(true)}>New session <Plus aria-hidden="true" /></button>
+            <button className="new-session" disabled={!ready} onClick={() => setSetupOpen(true)}>New session <Plus aria-hidden="true" /></button>
           </div>
         </header>
 
-        {tab === "study" && !sessionDone && (
+        {tab === "study" && !ready && <p role="status">Restoring your study session…</p>}
+        {tab === "study" && ready && !sessionDone && (
           <div className="study-layout">
             <article className="question-card">
+              {resumed && <p className="resume-note" role="status">Session restored on this device. Continue where you left off.</p>}
               <div className="question-meta"><span>EXAM {question.exam} · {question.area.toUpperCase()}</span><span>{question.id} · PDF {question.page}</span></div>
-              <div className="progress-line"><span style={{ width: `${((current + 1) / session.length) * 100}%` }} /></div>
+              <div className="progress-line" role="progressbar" aria-label="Session progress" aria-valuemin={0} aria-valuemax={session.length} aria-valuenow={sessionDone ? session.length : current}><span style={{ width: `${(current / session.length) * 100}%` }} /></div>
               <div className="question-heading">
-                <div><p className="counter">Question {current + 1} of {session.length}</p><h2>{question.group}</h2></div>
+                <div><p className="counter">Question {current + 1} of {session.length}</p><h2 ref={questionHeading} tabIndex={-1}>{question.group}</h2></div>
                 {question.negated && <span className="reverse-badge">Reverse-key item</span>}
               </div>
               <p className="scenario"><MathText text={question.prompt} /></p>
@@ -415,10 +486,10 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
                 })}
               </div>
               {!revealed ? (
-                <div className="question-actions"><button className="skip-button" onClick={skipQuestion}>Skip for now</button><button className="check-button" key="check-answer" onClick={checkAnswer}>Check all 5 statements <ArrowRight aria-hidden="true" /></button></div>
+                <div className="question-actions"><button className="skip-button" onClick={skipQuestion}>Skip for now</button><button className="check-button" key="check-answer" onClick={checkAnswer}>Check answers <ArrowRight aria-hidden="true" /></button></div>
               ) : (
                 <div className="answer-result">
-                  <div><span className="answer-score">{resultCount}/5</span><p>{resultCount === 5 ? "Saved. Your next review was scheduled automatically." : "Saved. This question will return tomorrow."}</p></div>
+                  <div role="status"><span className="answer-score">{resultCount}/5 <small>correct</small></span><p>{syncLabel} · Next review {progressByQuestion[question.id] ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(progressByQuestion[question.id].nextDue) : "scheduled automatically"}</p></div>
                   <button className="check-button" key="next-question" onClick={nextQuestion}>{current + 1 >= session.length ? "Finish session" : "Next question"} <ArrowRight aria-hidden="true" /></button>
                 </div>
               )}
@@ -456,7 +527,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
               <article><span>Learning coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{unseenCount} unseen · {user ? "cloud synced" : "on this device"}</small></article>
             </div>
             <div className="domain-table-card">
-              <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest confidence first</h2></div><button className="text-button" disabled={!hydrated || syncStatus === "syncing"} onClick={resetProgress}><RotateCcw aria-hidden="true" /> Reset progress</button></div>
+              <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest accuracy first</h2></div><button className="text-button" disabled={!hydrated || syncStatus === "syncing"} onClick={resetProgress}><RotateCcw aria-hidden="true" /> Reset progress</button></div>
               <div className="domain-table">
                 {domainStats.map((row) => {
                   const rowAccuracy = row.total ? Math.round((row.correct / row.total) * 100) : 0;
@@ -489,9 +560,30 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
         )}
       </section>
 
+      {settingsOpen && (
+        <StudyDialog labelId="settings-title" onClose={() => setSettingsOpen(false)}>
+          <section className="session-modal settings-modal">
+            <div className="modal-head"><h2 id="settings-title">Study settings</h2><button aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X aria-hidden="true" /></button></div>
+            <fieldset><legend>Study text size</legend><div className="segmented">
+              {[1, 1.15, 1.3].map((scale, index) => <button key={scale} aria-pressed={textScale === scale} className={textScale === scale ? "selected" : ""} onClick={() => changeTextScale(scale)}>{["Standard", "Large", "Extra large"][index]}</button>)}
+            </div></fieldset>
+            <p className="text-preview" style={{ fontSize: `${textScale}rem` }}>Comfortable reading for every question and explanation.</p>
+            <div className="settings-row"><span>Appearance</span><ThemeToggle /></div>
+            <p className="settings-status">{syncLabel}. Sessions resume in this browser on mobile and desktop.</p>
+            <nav className="settings-links" aria-label="Study navigation">
+              <Link href="/" onClick={() => setSettingsOpen(false)}>Study</Link>
+              <Link href="/progress" onClick={() => setSettingsOpen(false)}>Progress</Link>
+              <Link href="/learning-guide" onClick={() => setSettingsOpen(false)}>Learning guide</Link>
+            </nav>
+            <button className="start-button" disabled={!ready} onClick={() => { setSettingsOpen(false); setSetupOpen(true); }}>New session <Plus aria-hidden="true" /></button>
+            {user ? <button className="secondary-button" onClick={() => { setSettingsOpen(false); void signOut(); }}>Sign out</button> : <button className="secondary-button" onClick={() => { setSettingsOpen(false); setAuthMessage(""); setAuthOpen(true); }}>Sync progress</button>}
+          </section>
+        </StudyDialog>
+      )}
+
       {setupOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSetupOpen(false); }}>
-          <section className="session-modal" role="dialog" aria-modal="true" aria-labelledby="session-title">
+        <StudyDialog labelId="session-title" onClose={() => setSetupOpen(false)}>
+          <section className="session-modal">
             <div className="modal-head"><div><span className="eyebrow">Custom deck</span><h2 id="session-title">Build a focused session</h2></div><button aria-label="Close" onClick={() => setSetupOpen(false)}><X aria-hidden="true" /></button></div>
             <fieldset><legend>Exam</legend><div className="segmented">{[["all","Both"],["1","Exam 1"],["2","Exam 2"]].map(([value,label]) => <button key={value} className={examFilter === value ? "selected" : ""} onClick={() => { setExamFilter(value); setDomainFilter("all"); }}>{label}</button>)}</div></fieldset>
             <fieldset><legend>Knowledge area</legend><div className="segmented">{[["all","Mixed"],["Machine Learning","Machine Learning"],["Quantitative Finance","Quant Finance"]].map(([value,label]) => <button key={value} className={areaFilter === value ? "selected" : ""} onClick={() => { setAreaFilter(value); setDomainFilter("all"); }}>{label}</button>)}</div></fieldset>
@@ -500,12 +592,12 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             <div className="modal-note"><span><Sparkles aria-hidden="true" /></span><p><strong>Review-first sequencing</strong><br />Due reviews appear first, followed by unseen questions and then future reviews.</p></div>
             <button className="start-button" onClick={startSession}>Start session <ArrowRight aria-hidden="true" /></button>
           </section>
-        </div>
+        </StudyDialog>
       )}
 
       {authOpen && !user && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAuthOpen(false); }}>
-          <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <StudyDialog labelId="auth-title" onClose={() => setAuthOpen(false)}>
+          <section className="auth-modal">
             <div className="modal-head"><div><span className="eyebrow">Optional cloud sync</span><h2 id="auth-title">Study anywhere.</h2></div><button aria-label="Close" onClick={() => setAuthOpen(false)}><X aria-hidden="true" /></button></div>
             <p className="auth-intro">Keep studying without an account, or sign in to merge this device&apos;s progress and sync it across devices.</p>
             <button className="google-button" disabled={authBusy} onClick={() => void continueWithGoogle()}><span>G</span> Continue with Google</button>
@@ -517,7 +609,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             {authMessage && <p className="auth-message" role="status">{authMessage}</p>}
             <p className="auth-footnote">Supabase stores only your account and answer history. Question text and answer keys stay bundled in this app.</p>
           </section>
-        </div>
+        </StudyDialog>
       )}
     </main>
   );

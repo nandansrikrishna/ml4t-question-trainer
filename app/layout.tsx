@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
 import 'katex/dist/katex.min.css';
@@ -23,6 +23,8 @@ const deploymentUrl =
 const metadataBase = new URL(
   deploymentUrl.startsWith('http') ? deploymentUrl : `https://${deploymentUrl}`,
 );
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
 export const metadata: Metadata = {
   metadataBase,
