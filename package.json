@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
+    "test:review": "node --experimental-strip-types --test tests/review-queue.test.mjs",
     "test:exam": "node --experimental-strip-types --test tests/practice-exam.test.mjs tests/exam-sync.test.mjs"
   },
   "dependencies": {

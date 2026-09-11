@@ -558,7 +558,7 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .calculator-keys button:hover { background: var(--secondary); }
 .calculator-keys button:last-child { grid-column: 1 / -1; }
 @media (max-width: 760px) {
-  .sidebar nav { grid-template-columns: repeat(4, 36px); }
+  .sidebar nav { grid-template-columns: repeat(5, 36px); }
   .exam-options { grid-template-columns: 1fr; }
   .exam-intro { padding: 24px; }
   .exam-toolbar { gap: 8px; flex-wrap: wrap; }
@@ -591,3 +591,12 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .exam-root .exam-bucket-target:disabled { opacity: 1; }
 .exam-bucket-target:not(:disabled) { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
 .exam-root .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+.review-decks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.review-deck { display: flex; flex-direction: column; align-items: flex-start; padding: 28px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
+.review-deck h2 { margin: 16px 0 8px; font-size: 23px; }
+.review-deck p { color: var(--muted-foreground); font-size: 14px; line-height: 1.7; }
+.review-deck small { display: block; color: var(--muted-foreground); margin: auto 0 20px; padding-top: 20px; }
+.review-deck .check-button:disabled { opacity: .5; cursor: default; }
+.review-back { margin-bottom: 20px; }
+@media (max-width: 1100px) { .review-decks { grid-template-columns: 1fr; } }

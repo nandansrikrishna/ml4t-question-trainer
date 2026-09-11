@@ -52,6 +52,7 @@ test('cloud review uses finalized scores and distinguishes unanswered from false
 test('auth return paths allow only app tabs',async()=>{
   const {authReturnPath}=await import('../lib/auth-return.ts');
   assert.equal(authReturnPath('/practice-exam'),'/practice-exam');
+  assert.equal(authReturnPath('/review'),'/review');
   for(const path of ['https://evil.example','//evil.example','/\\evil.example','/unknown',null])assert.equal(authReturnPath(path),'/');
 });
 

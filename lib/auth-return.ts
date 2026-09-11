@@ -3,6 +3,7 @@ const RETURN_PATHS = new Set([
   "/",
   "/practice-exam",
   "/progress",
+  "/review",
   "/learning-guide",
 ]);
 export function authReturnPath(value: string | null | undefined) {
