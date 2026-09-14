@@ -1,3 +1,8 @@
+# /// script
+# dependencies = ["pypdf==6.9.0"]
+# ///
+# Run with `uv run scripts/extract_pool.py`. Keep extraction pinned because the
+# embedded-font math repairs depend on this version's whitespace and glyph order.
 from __future__ import annotations
 
 import bisect
@@ -256,106 +261,126 @@ def repair_extracted_text(question_id: str, value: str) -> str:
     return value
 
 
-reader = PdfReader(SOURCE)
-pages: list[str] = []
-page_offsets: list[int] = []
-cursor = 0
-for page_number, page in enumerate(reader.pages, start=1):
-    text = page.extract_text() or ""
-    text = re.sub(r"^\s*\d+\s+Rev:\d+\s*$", "", text, flags=re.MULTILINE)
-    text = text.replace("\ufb01", "fi").replace("\ufb02", "fl").replace("Ư", "ff")
-    page_offsets.append(cursor)
-    pages.append(text)
-    cursor += len(text) + 1
+# Match PDF structure before clean() collapses line boundaries. A question ends
+# at the next group, domain, or chapter heading, even if the next ID is pages away.
+# Do not split on blank lines: explanations and display math can span paragraphs.
+SECTION_HEADING = re.compile(
+    r"^[ \t]*(?:G\d+:[ \t]+[^\n]+|Domain[ \t]+\d+:[ \t]+[^\n]+|"
+    r"(?:Machine Learning|Quantitative Finance)[ \t]+[–-][ \t]+Part[ \t]+\d+[ \t]*)$",
+    re.MULTILINE,
+)
 
-full_text = "\n".join(pages)
-id_pattern = re.compile(r"\[((?:ML2?|QF2?)-D\d+G\d+Q\d+)\]")
-matches = list(id_pattern.finditer(full_text))
 
-# Domain introductions list every topic group before the first question.
-group_names: dict[tuple[str, int, int], str] = {}
-for prefix, section in SECTIONS.items():
-    for domain_index, start_page in enumerate(section["starts"], start=1):
-        first_question_page = start_page
-        marker = re.compile(rf"\[{re.escape(prefix)}-D{domain_index}G\d+Q\d+\]")
-        while first_question_page <= len(pages) and not marker.search(pages[first_question_page - 1]):
-            first_question_page += 1
-        intro_text = "\n".join(pages[start_page - 1:first_question_page])
-        for group_number, title in re.findall(r"(?:^|\n)G(\d+):\s*([^\n]+)", intro_text):
-            group_names[(prefix, domain_index, int(group_number))] = clean(title)
+def trim_question_chunk(chunk: str) -> str:
+    heading = SECTION_HEADING.search(chunk)
+    return chunk[:heading.start()] if heading else chunk
 
-questions = []
-for index, match in enumerate(matches):
-    question_id = match.group(1)
-    end = matches[index + 1].start() if index + 1 < len(matches) else len(full_text)
-    chunk = full_text[match.end():end]
-    key_split = re.split(r"\nAnswer Key(?:\s*\([^\n]*\))?\s*:\s*\n", chunk, maxsplit=1)
-    if len(key_split) != 2:
-        raise ValueError(f"Answer key not found for {question_id}")
-    front, answer_key = key_split
 
-    statements = []
-    first_statement = re.search(r"(?:^|\n)A\.\s+", front)
-    if not first_statement:
-        raise ValueError(f"Statements not found for {question_id}")
-    prompt = repair_extracted_text(question_id, clean(front[: first_statement.start()]))
+def main() -> None:
+    reader = PdfReader(SOURCE)
+    pages: list[str] = []
+    page_offsets: list[int] = []
+    cursor = 0
+    for page_number, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        text = re.sub(r"^\s*\d+\s+Rev:\d+\s*$", "", text, flags=re.MULTILINE)
+        text = text.replace("\ufb01", "fi").replace("\ufb02", "fl").replace("Ư", "ff")
+        page_offsets.append(cursor)
+        pages.append(text)
+        cursor += len(text) + 1
 
-    for letter in "ABCDE":
-        statement_match = re.search(
-            rf"(?:^|\n){letter}\.\s+(.*?)(?=\n[A-E]\.\s+|\Z)", front, re.DOTALL
-        )
-        answer_match = re.search(
-            rf"(?:^|\n){letter}\.\s+(True|False)\s*[–-]\s*(.*?)(?=\n[A-E]\.\s+(?:True|False)\s*[–-]|\Z)",
-            answer_key,
-            re.DOTALL | re.IGNORECASE,
-        )
-        if not statement_match or not answer_match:
-            raise ValueError(f"Could not parse statement {letter} for {question_id}")
-        statements.append({
-            "label": letter,
-            "text": repair_extracted_text(question_id, clean(statement_match.group(1))),
-            "answer": answer_match.group(1).lower() == "true",
-            "explanation": repair_extracted_text(question_id, clean(answer_match.group(2))),
+    full_text = "\n".join(pages)
+    id_pattern = re.compile(r"\[((?:ML2?|QF2?)-D\d+G\d+Q\d+)\]")
+    matches = list(id_pattern.finditer(full_text))
+
+    # Domain introductions list every topic group before the first question.
+    group_names: dict[tuple[str, int, int], str] = {}
+    for prefix, section in SECTIONS.items():
+        for domain_index, start_page in enumerate(section["starts"], start=1):
+            first_question_page = start_page
+            marker = re.compile(rf"\[{re.escape(prefix)}-D{domain_index}G\d+Q\d+\]")
+            while first_question_page <= len(pages) and not marker.search(pages[first_question_page - 1]):
+                first_question_page += 1
+            intro_text = "\n".join(pages[start_page - 1:first_question_page])
+            for group_number, title in re.findall(r"(?:^|\n)G(\d+):\s*([^\n]+)", intro_text):
+                group_names[(prefix, domain_index, int(group_number))] = clean(title)
+
+    questions = []
+    for index, match in enumerate(matches):
+        question_id = match.group(1)
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(full_text)
+        chunk = trim_question_chunk(full_text[match.end():end])
+        key_split = re.split(r"\nAnswer Key(?:\s*\([^\n]*\))?\s*:\s*\n", chunk, maxsplit=1)
+        if len(key_split) != 2:
+            raise ValueError(f"Answer key not found for {question_id}")
+        front, answer_key = key_split
+
+        statements = []
+        first_statement = re.search(r"(?:^|\n)A\.\s+", front)
+        if not first_statement:
+            raise ValueError(f"Statements not found for {question_id}")
+        prompt = repair_extracted_text(question_id, clean(front[: first_statement.start()]))
+
+        for letter in "ABCDE":
+            statement_match = re.search(
+                rf"(?:^|\n){letter}\.\s+(.*?)(?=\n[A-E]\.\s+|\Z)", front, re.DOTALL
+            )
+            answer_match = re.search(
+                rf"(?:^|\n){letter}\.\s+(True|False)\s*[–-]\s*(.*?)(?=\n[A-E]\.\s+(?:True|False)\s*[–-]|\Z)",
+                answer_key,
+                re.DOTALL | re.IGNORECASE,
+            )
+            if not statement_match or not answer_match:
+                raise ValueError(f"Could not parse statement {letter} for {question_id}")
+            statements.append({
+                "label": letter,
+                "text": repair_extracted_text(question_id, clean(statement_match.group(1))),
+                "answer": answer_match.group(1).lower() == "true",
+                "explanation": repair_extracted_text(question_id, clean(answer_match.group(2))),
+            })
+
+        prefix, domain_raw, group_raw, _ = re.match(
+            r"(ML2?|QF2?)-D(\d+)G(\d+)Q(\d+)", question_id
+        ).groups()
+        domain_index = int(domain_raw)
+        group_index = int(group_raw)
+        section = SECTIONS[prefix]
+        page_number = bisect.bisect_right(page_offsets, match.start())
+
+        questions.append({
+            "id": question_id,
+            "exam": section["exam"],
+            "area": section["area"],
+            "domainIndex": domain_index,
+            "domain": section["titles"][domain_index - 1],
+            "groupIndex": group_index,
+            "group": group_names.get((prefix, domain_index, group_index), f"Topic Group {group_index}"),
+            "page": page_number,
+            "negated": bool(re.search(r"True if (?:it is )?incorrect", prompt, re.IGNORECASE)),
+            "prompt": prompt,
+            "statements": statements,
         })
 
-    prefix, domain_raw, group_raw, _ = re.match(
-        r"(ML2?|QF2?)-D(\d+)G(\d+)Q(\d+)", question_id
-    ).groups()
-    domain_index = int(domain_raw)
-    group_index = int(group_raw)
-    section = SECTIONS[prefix]
-    page_number = bisect.bisect_right(page_offsets, match.start())
+    if len(questions) != 938:
+        raise ValueError(f"Expected 938 questions, parsed {len(questions)}")
 
-    questions.append({
-        "id": question_id,
-        "exam": section["exam"],
-        "area": section["area"],
-        "domainIndex": domain_index,
-        "domain": section["titles"][domain_index - 1],
-        "groupIndex": group_index,
-        "group": group_names.get((prefix, domain_index, group_index), f"Topic Group {group_index}"),
-        "page": page_number,
-        "negated": bool(re.search(r"True if (?:it is )?incorrect", prompt, re.IGNORECASE)),
-        "prompt": prompt,
-        "statements": statements,
+    bad_math_glyph = re.compile(r"[\u0B00-\u0DFF\u1200-\u137F\u23A7-\u23AD]")
+    corrupt_question_ids = sorted({
+        question["id"]
+        for question in questions
+        for value in (
+            question["prompt"],
+            *(statement[field] for statement in question["statements"] for field in ("text", "explanation")),
+        )
+        if bad_math_glyph.search(value)
     })
+    if corrupt_question_ids:
+        raise ValueError(f"Unrepaired embedded-font math in: {', '.join(corrupt_question_ids)}")
 
-if len(questions) != 938:
-    raise ValueError(f"Expected 938 questions, parsed {len(questions)}")
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT.write_text(json.dumps(questions, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"Wrote {len(questions)} questions to {OUTPUT} ({OUTPUT.stat().st_size:,} bytes)")
 
-bad_math_glyph = re.compile(r"[\u0B00-\u0DFF\u1200-\u137F\u23A7-\u23AD]")
-corrupt_question_ids = sorted({
-    question["id"]
-    for question in questions
-    for value in (
-        question["prompt"],
-        *(statement[field] for statement in question["statements"] for field in ("text", "explanation")),
-    )
-    if bad_math_glyph.search(value)
-})
-if corrupt_question_ids:
-    raise ValueError(f"Unrepaired embedded-font math in: {', '.join(corrupt_question_ids)}")
 
-OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-OUTPUT.write_text(json.dumps(questions, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-print(f"Wrote {len(questions)} questions to {OUTPUT} ({OUTPUT.stat().st_size:,} bytes)")
+if __name__ == "__main__":
+    main()
