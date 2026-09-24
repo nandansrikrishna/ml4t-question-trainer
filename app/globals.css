@@ -281,14 +281,14 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .math-inline .katex { font-size: 1.05em; }
 .math-display { display: block; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding: 2px 0; text-align: center; }
 .math-display .katex-display { margin: .65em 0; }
-.question-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.question-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
 .skip-button { padding: 8px 2px; border: 0; background: transparent; color: var(--muted-foreground); font-size: 10px; font-weight: 560; }
 .skip-button:hover { color: var(--foreground); }
 .check-button { min-height: 39px; padding: 0 15px; border: 1px solid var(--primary-solid); border-radius: 9px; background: var(--primary-solid); color: white; font-size: 10px; font-weight: 650; box-shadow: var(--shadow-sm); }
 .check-button:hover, .start-button:hover { background: var(--primary-solid-hover); }
 .check-button svg, .start-button svg { transition: transform 180ms var(--ease-out); }
 .check-button:hover svg, .start-button:hover svg { transform: translateX(2px); }
-.answer-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; margin-top: 20px; padding: 16px; border: 1px solid var(--answer-border); border-radius: 12px; background: var(--answer-background); animation: reveal-in 280ms var(--ease-out) both; }
+.answer-result { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: center; margin-top: 20px; padding: 16px; border: 1px solid var(--answer-border); border-radius: 12px; background: var(--answer-background); animation: reveal-in 280ms var(--ease-out) both; }
 .answer-result > div { display: flex; align-items: center; gap: 11px; }
 .answer-score { font-size: 29px; font-weight: 650; letter-spacing: -.05em; white-space: nowrap; }
 .answer-result p { margin: 0; color: var(--muted-foreground); font-size: 9px; line-height: 1.45; }
@@ -600,3 +600,23 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .review-deck .check-button:disabled { opacity: .5; cursor: default; }
 .review-back { margin-bottom: 20px; }
 @media (max-width: 1100px) { .review-decks { grid-template-columns: 1fr; } }
+
+.save-question-button {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 40px;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+}
+.save-question-button[aria-pressed="true"] { color: var(--accent-foreground); background: var(--accent); border-color: var(--accent-border); }
+.save-question-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.save-question-button:disabled { opacity: .5; cursor: wait; }
+.bookmark-status { color: var(--muted-foreground); font-size: 12px; margin: 16px 0; }
+.bookmark-status button { margin-left: 10px; }
+
+.question-action-buttons { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-left: auto; }
+.exam-question-heading { display: flex; flex: 1; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.exam-question-meta { gap: 12px; flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .question-action-buttons { gap: 8px; width: 100%; }
+  .question-action-buttons .save-question-button,
+  .question-action-buttons .check-button { padding: 8px; font-size: 11px; }
+}

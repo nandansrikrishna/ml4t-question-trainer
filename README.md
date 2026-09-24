@@ -134,3 +134,20 @@ npm run build
 # Transactional database integration tests; all fixtures are rolled back:
 npx supabase db query --linked --file supabase/tests/practice_exam_sync_test.sql
 ```
+
+### Saved questions
+
+Use **Save for review** during practice, an exam, or a submitted exam's answer review.
+**Review → Saved questions** offers one pass through the saved collection. Correct
+answers and session completion do not remove bookmarks; toggle **Saved for review**
+to remove one. Exam pins remain separate reminders to revisit before submitting.
+
+Signed-in bookmarks sync across devices. Signed-out bookmarks stay on the current
+browser and are separate from account bookmarks. Offline changes are cached and
+retried on reconnect, window focus, or **Retry bookmark sync**. Removals are retained
+as tombstones; the newest edit wins (removal wins at equal timestamps).
+
+Apply `supabase/migrations/20260924021554_saved_questions.sql` before deploying the
+UI. It adds the bookmark table, ownership policies, and stale-update protection.
+Run `npm run test:saved` and `supabase test db` to check persistence/conflicts and
+row-level access respectively.

@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { useExamSync } from "./use-exam-sync";
 import { MathText } from "./math-text";
+import { SaveQuestionButton } from "./save-question-button";
+import type { SavedQuestions } from "../lib/saved-questions";
 import {
   clockText,
   completeQuestion,
@@ -26,10 +28,16 @@ export default function PracticeExam({
   userId,
   visible,
   onSignIn,
+  savedQuestions,
+  bookmarksReady,
+  onToggleSaved,
 }: {
   userId: string | null;
   visible: boolean;
   onSignIn: () => void;
+  savedQuestions: SavedQuestions;
+  bookmarksReady: boolean;
+  onToggleSaved: (code: string) => void;
 }) {
   const {
     sessions,
@@ -136,7 +144,7 @@ export default function PracticeExam({
                 <Check size={17} /> 200 individually graded statements
               </span>
               <span>
-                <Pin size={17} /> Pin questions to revisit
+                <Pin size={17} /> Pin questions to revisit before submitting
               </span>
             </div>
           </div>
@@ -379,7 +387,7 @@ export default function PracticeExam({
                   {expanded && !review && (
                     <button
                       className="exam-pin"
-                      aria-label={`Pin question ${index + 1}`}
+                      aria-label={`Revisit question ${index + 1} before submitting`}
                       aria-pressed={item.pinned}
                       onClick={() =>
                         updateItem(index, (i) => ({ ...i, pinned: !i.pinned }))
@@ -400,6 +408,9 @@ export default function PracticeExam({
                   key={item.question.id}
                   item={item}
                   index={index}
+                  saved={!!savedQuestions[item.question.id]?.saved}
+                  bookmarksReady={bookmarksReady}
+                  onToggleSaved={onToggleSaved}
                   review={!!review}
                   update={updateItem}
                 />
@@ -475,10 +486,16 @@ const ExamCard = memo(function ExamCard({
   index,
   review,
   update,
+  saved,
+  bookmarksReady,
+  onToggleSaved,
 }: {
   item: ExamItem;
   index: number;
   review: boolean;
+  saved: boolean;
+  bookmarksReady: boolean;
+  onToggleSaved: (code: string) => void;
   update: (index: number, fn: (item: ExamItem) => ExamItem) => void;
 }) {
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -505,13 +522,17 @@ const ExamCard = memo(function ExamCard({
   return (
     <article className="exam-question" id={`exam-question-${index}`}>
       <div className="exam-question-meta">
-        <span>
-          Question {index + 1} <small>· 5 points · {item.question.area}</small>
-        </span>
+        <div className="exam-question-heading">
+          <span>
+            Question {index + 1} <small>· 5 points · {item.question.area}</small>
+          </span>
+          <SaveQuestionButton questionId={item.question.id} saved={saved} ready={bookmarksReady} onToggle={onToggleSaved} />
+        </div>
         <button
           className="exam-pin"
-          aria-label={`Pin question ${index + 1}`}
+          aria-label={`Revisit question ${index + 1} before submitting`}
           aria-pressed={item.pinned}
+          title="Revisit before submitting this exam"
           disabled={review}
           onClick={() => update(index, (i) => ({ ...i, pinned: !i.pinned }))}
         >

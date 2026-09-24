@@ -14,6 +14,12 @@ export type Database = {
         Update: { question_key?: number; code?: string };
         Relationships: [];
       };
+      user_saved_questions: {
+        Row: { user_id: string; question_key: number; saved: boolean; changed_at_ms: number };
+        Insert: { user_id: string; question_key: number; saved: boolean; changed_at_ms: number };
+        Update: { saved?: boolean; changed_at_ms?: number };
+        Relationships: [];
+      };
       user_question_progress: {
         Row: {
           user_id: string;

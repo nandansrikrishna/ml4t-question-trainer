@@ -31,6 +31,9 @@ import questionKeys from "./data/question-keys.json";
 import rawQuestions from "./data/questions.json";
 import ThemeToggle from "./theme-toggle";
 import PracticeExam from "./practice-exam";
+import { SaveQuestionButton } from "./save-question-button";
+import { useSavedQuestions } from "./use-saved-questions";
+import { savedQuestionIndexes } from "../lib/saved-questions";
 import { buildReviewBatch, REVIEW_REFILL_THRESHOLD } from "../lib/review-queue";
 
 type Statement = { label: string; text: string; answer: boolean; explanation: string };
@@ -100,6 +103,8 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     histories, legacyReviews, hydrated, user, syncStatus, saveAttempt, resetHistory,
     requestMagicLink, signInWithGoogle, signOut,
   } = useAnswerHistorySync(questionKeys);
+  const bookmarks = useSavedQuestions(hydrated ? (user?.id ?? null) : undefined);
+  const savedIndexes = useMemo(() => new Set(savedQuestionIndexes(QUESTIONS, bookmarks.items)), [bookmarks.items]);
   const dailyQuestionIndexes = useMemo(() => getDailyQuestionIndexes(QUESTIONS, dailyDateKey), [dailyDateKey]);
   const studyState = useStudySession(dailyQuestionIndexes);
   const reviewState = useStudySession(dailyQuestionIndexes);
@@ -188,21 +193,22 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const reviewDecks = useMemo(() => [
     { id: "exam-1", title: "Exam 1 deck", exam: 1, description: "Review Exam 1 material, with unseen questions first." },
     { id: "exam-2", title: "Exam 2 deck", exam: 2, description: "Review Exam 2 material, with unseen questions first." },
+    { id: "saved", title: "Saved questions", exam: null, description: "Questions you chose to revisit, even when you got every statement right. Saved until you remove them." },
     { id: "missed", title: "Missed questions", exam: null, description: "Practice questions until you get every statement right. Skipped questions stay in the deck." },
   ].map((deck) => ({
     ...deck,
-    candidates: QUESTIONS.map((item, index) => ({ item, index })).filter(({ item }) => (
-      deck.exam !== null ? item.exam === deck.exam : (
+    candidates: QUESTIONS.map((item, index) => ({ item, index })).filter(({ item, index }) => (
+      deck.id === "saved" ? savedIndexes.has(index) : deck.exam !== null ? item.exam === deck.exam : (
         progressByQuestion[item.id] && progressByQuestion[item.id].lastScore < 5
       )
     )),
-  })), [progressByQuestion]);
+  })), [progressByQuestion, savedIndexes]);
   const reviewDeck = reviewDecks.find((deck) => deck.title === activeReview);
   const reviewSessionVisible = tab === "review" && sessionKind === "review" && activeReview !== null;
   const studySessionVisible = tab === "study" || reviewSessionVisible;
   const startReview = (deck: typeof reviewDecks[number], startedAt: number) => {
     if (!hydrated) return;
-    setSession(buildReviewBatch(deck.candidates, progressByQuestion, [], [], startedAt, deck.exam !== null));
+    setSession(deck.id === "saved" ? deck.candidates.map(({ index }) => index) : buildReviewBatch(deck.candidates, progressByQuestion, [], [], startedAt, deck.exam !== null));
     setSessionKind("review");
     setActiveReview(deck.title);
     setDailyReplayStarted(false);
@@ -211,7 +217,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   };
 
   useEffect(() => {
-    if (tab !== "review" || !hydrated || sessionKind !== "review" || !reviewDeck || sessionDone
+    if (tab !== "review" || !hydrated || sessionKind !== "review" || !reviewDeck || reviewDeck.id === "saved" || sessionDone
       || session.length - current - 1 > REVIEW_REFILL_THRESHOLD) return;
     // The catalog is local; prepare the next batch between interactions.
     const timer = window.setTimeout(() => {
@@ -289,7 +295,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
       // Remove questions mastered since prefetching, then refill synchronously if needed.
       const eligible = new Set(reviewDeck.candidates.map(({ index }) => index));
       let pending = session.slice(current + 1).filter((index) => eligible.has(index));
-      if (!pending.length) pending = buildReviewBatch(reviewDeck.candidates, progressByQuestion,
+      if (!pending.length && reviewDeck.id !== "saved") pending = buildReviewBatch(reviewDeck.candidates, progressByQuestion,
         session.slice(0, current + 1), [], Date.now(), reviewDeck.exam !== null);
       if (!pending.length) { setSessionDone(true); return; }
       setSession([...session.slice(0, current + 1), ...pending]);
@@ -406,7 +412,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
           <div>
             <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : sessionKind === "study_more" ? `Study 10 more · Exam ${DAILY_EXAM}` : "Study session") : tab === "review" ? "Your review library" : tab === "progress" ? "Learning signal" : tab === "exam" ? "The exam room" : "How to use the pool"}</span>
             <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : sessionKind === "study_more" ? "Keep the momentum going." : "Practice with intent.") : tab === "review" ? (reviewSessionVisible ? activeReview : "Choose a deck. Keep learning.") : tab === "progress" ? "See what needs attention." : tab === "exam" ? "Put your preparation to the test." : "Make every question useful."}</h1>
-            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Due reviews come first, followed by unseen questions.") : tab === "review" ? "Keep reviewing at your own pace. New questions are prepared as you go." : tab === "progress" ? "Coverage and confidence, organized by domain." : tab === "exam" ? "A full-length rehearsal, at your own desk." : "A simple loop for turning recall into durable understanding."}</p>
+            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Due reviews come first, followed by unseen questions.") : tab === "review" ? (reviewSessionVisible && reviewDeck?.id === "saved" ? "Work through your saved questions once. Your bookmarks stay saved for next time." : "Keep reviewing at your own pace. Choose a deck or revisit your saved questions.") : tab === "progress" ? "Coverage and confidence, organized by domain." : tab === "exam" ? "A full-length rehearsal, at your own desk." : "A simple loop for turning recall into durable understanding."}</p>
           </div>
           <div className="topbar-actions">
             <ThemeToggle />
@@ -422,18 +428,25 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
           </div>
         </header>
 
-        <PracticeExam userId={user?.id ?? null} visible={tab === "exam"} onSignIn={() => { setAuthMessage(""); setAuthOpen(true); }} />
+        {(bookmarks.status === "offline" || bookmarks.storageError) && (
+          <p className="bookmark-status" role="status">
+            {bookmarks.storageError ? "Bookmarks could not be saved on this device. Keep this page open until they sync." : "Bookmarks saved on this device. Cloud sync is unavailable."}
+            <button className="text-button" onClick={bookmarks.retry}>Retry bookmark sync</button>
+          </p>
+        )}
+
+        <PracticeExam savedQuestions={bookmarks.items} bookmarksReady={bookmarks.ready} onToggleSaved={bookmarks.toggle} userId={user?.id ?? null} visible={tab === "exam"} onSignIn={() => { setAuthMessage(""); setAuthOpen(true); }} />
 
         {tab === "review" && !reviewSessionVisible && (
           <section className="review-decks" aria-label="Review decks">
             {reviewDecks.map((deck) => (
               <article className="review-deck" key={deck.id}>
-                <span className="eyebrow">{deck.exam ? "Unseen first" : "Learn from mistakes"}</span>
+                <span className="eyebrow">{deck.id === "saved" ? "Your collection" : deck.exam ? "Unseen first" : "Learn from mistakes"}</span>
                 <h2>{deck.title}</h2>
                 <p>{deck.description}</p>
-                <small>{!hydrated ? "Loading your history…" : `${deck.candidates.length} questions${deck.exam ? ` · ${deck.candidates.filter(({ item }) => !progressByQuestion[item.id]).length} unseen` : ""}`}</small>
-                <button className="check-button" disabled={!hydrated} onClick={() => startReview(deck, Date.now())}>{deck.candidates.length ? "Start reviewing" : "View completion"} <ArrowRight aria-hidden="true" /></button>
-                {hydrated && !deck.candidates.length && <p>All caught up! You have no missed questions to review.</p>}
+                <small>{(!hydrated || (deck.id === "saved" && !bookmarks.ready)) ? "Loading your history…" : `${deck.candidates.length} questions${deck.exam ? ` · ${deck.candidates.filter(({ item }) => !progressByQuestion[item.id]).length} unseen` : ""}`}</small>
+                <button className="check-button" disabled={!hydrated || (deck.id === "saved" && (!bookmarks.ready || !deck.candidates.length))} onClick={() => startReview(deck, Date.now())}>{deck.candidates.length ? "Start reviewing" : deck.id === "saved" ? "No saved questions" : "View completion"} <ArrowRight aria-hidden="true" /></button>
+                {hydrated && (deck.id !== "saved" || bookmarks.ready) && !deck.candidates.length && <p>{deck.id === "saved" ? "No saved questions yet. Choose Save for review on any question to add it here." : "All caught up! You have no missed questions to review."}</p>}
               </article>
             ))}
           </section>
@@ -446,7 +459,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
               <div className="question-meta"><span>EXAM {question.exam} · {question.area.toUpperCase()}</span><span>{question.id} · PDF {question.page}</span></div>
               {sessionKind !== "review" && <div className="progress-line"><span style={{ width: `${((current + 1) / session.length) * 100}%` }} /></div>}
               <div className="question-heading">
-                <div><p className="counter">Question {current + 1}{sessionKind !== "review" && ` of ${session.length}`}</p><h2>{question.group}</h2></div>
+                <div><p className="counter">Question {current + 1}{(sessionKind !== "review" || reviewDeck?.id === "saved") && ` of ${session.length}`}</p><h2>{question.group}</h2></div>
                 {question.negated && <span className="reverse-badge">Reverse-key item</span>}
               </div>
               <p className="scenario"><MathText text={question.prompt} /></p>
@@ -473,11 +486,20 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
                 })}
               </div>
               {!revealed ? (
-                <div className="question-actions"><button className="skip-button" onClick={skipQuestion}>Skip for now</button><button className="check-button" key="check-answer" onClick={checkAnswer}>Check all 5 statements <ArrowRight aria-hidden="true" /></button></div>
+                <div className="question-actions">
+                  <button className="skip-button" onClick={skipQuestion}>Skip for now</button>
+                  <div className="question-action-buttons">
+                    <SaveQuestionButton questionId={question.id} saved={!!bookmarks.items[question.id]?.saved} ready={bookmarks.ready} onToggle={bookmarks.toggle} />
+                    <button className="check-button" key="check-answer" onClick={checkAnswer}>Check all 5 statements <ArrowRight aria-hidden="true" /></button>
+                  </div>
+                </div>
               ) : (
                 <div className="answer-result">
                   <div><span className="answer-score">{resultCount}/5</span><p>{resultCount === 5 ? "Saved. Your next review was scheduled automatically." : (sessionKind === "review" ? "Saved. You’ll get another chance to practice this question." : "Saved. This question will return tomorrow.")}</p></div>
-                  <button className="check-button" key="next-question" onClick={nextQuestion}>{sessionKind === "review" ? (reviewDeck?.candidates.length === 0 ? "Finish review" : "Next question") : current + 1 >= session.length ? "Finish session" : "Next question"} <ArrowRight aria-hidden="true" /></button>
+                  <div className="question-action-buttons">
+                    <SaveQuestionButton questionId={question.id} saved={!!bookmarks.items[question.id]?.saved} ready={bookmarks.ready} onToggle={bookmarks.toggle} />
+                    <button className="check-button" key="next-question" onClick={nextQuestion}>{sessionKind === "review" ? ((reviewDeck?.id === "saved" ? !session.slice(current + 1).some((index) => savedIndexes.has(index)) : reviewDeck?.candidates.length === 0) ? "Finish review" : "Next question") : current + 1 >= session.length ? "Finish session" : "Next question"} <ArrowRight aria-hidden="true" /></button>
+                  </div>
                 </div>
               )}
             </article>
@@ -495,8 +517,8 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
         {studySessionVisible && sessionDone && (
           <section className="completion-card">
             <span className="completion-mark"><Check aria-hidden="true" /></span><span className="eyebrow">{sessionKind === "daily" ? "Completed for today" : sessionKind === "study_more" ? "Extra study complete" : "Session complete"}</span>
-            <h2>{reviewSessionVisible ? "All caught up!" : sessionStatements ? `${sessionAccuracy}% statement accuracy` : "No questions answered"}</h2>
-            <p>{reviewSessionVisible ? "You have no missed questions left to review. Come back after more practice to keep building your understanding." : sessionKind === "daily" ? `You completed today’s shared Exam ${DAILY_EXAM} set: ${session.length - sessionSkipped} answered and ${sessionSkipped} skipped. Submitted answers are saved and review timing is updated automatically.` : `You worked through ${session.length} questions: ${session.length - sessionSkipped} answered and ${sessionSkipped} skipped. Submitted answers are saved and imperfect answers will return in the review queue.`}</p>
+            <h2>{reviewSessionVisible ? (reviewDeck?.id === "saved" ? "Saved questions session complete" : "All caught up!") : sessionStatements ? `${sessionAccuracy}% statement accuracy` : "No questions answered"}</h2>
+            <p>{reviewSessionVisible ? (reviewDeck?.id === "saved" ? "Your bookmarks stay saved, including questions you answered correctly. Review them again anytime, or remove them when you feel confident." : "You have no missed questions left to review. Come back after more practice to keep building your understanding.") : sessionKind === "daily" ? `You completed today’s shared Exam ${DAILY_EXAM} set: ${session.length - sessionSkipped} answered and ${sessionSkipped} skipped. Submitted answers are saved and review timing is updated automatically.` : `You worked through ${session.length} questions: ${session.length - sessionSkipped} answered and ${sessionSkipped} skipped. Submitted answers are saved and imperfect answers will return in the review queue.`}</p>
             {reviewSessionVisible ? (
               <div><button className="check-button" onClick={() => setActiveReview(null)}>Back to decks <ArrowRight aria-hidden="true" /></button></div>
             ) : sessionKind === "daily" ? (
@@ -575,7 +597,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
               <button className="start-button" disabled={authBusy || !email.trim()}>{authBusy ? "Sending…" : "Email me a sign-in link"}<ArrowRight aria-hidden="true" /></button>
             </form>
             {authMessage && <p className="auth-message" role="status">{authMessage}</p>}
-            <p className="auth-footnote">Your account, answer history, and exam sessions are saved so you can continue across devices.</p>
+            <p className="auth-footnote">Your account, answer history, saved questions, and exam sessions are saved so you can continue across devices.</p>
           </section>
         </div>
       )}
