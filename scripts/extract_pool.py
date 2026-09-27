@@ -15,6 +15,14 @@ from pypdf import PdfReader
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT.parent / "ML4T Exam Question Pool.pdf"
 OUTPUT = ROOT / "app" / "data" / "questions.json"
+WITHDRAWN_OUTPUT = ROOT / "app" / "data" / "withdrawn-questions.json"
+
+# Keep withdrawn content for historical exam review, outside the active pool.
+WITHDRAWN_QUESTION_IDS = {
+    "ML-D1G2Q8", "ML-D2G4Q5", "ML-D3G1Q4", "ML-D3G3Q6",
+    "ML-D5G5Q4", "ML-D6G4Q6", "ML-D6G5Q5", "ML-D6G5Q6",
+    "QF-D8G4Q1",
+}
 
 SECTIONS = {
     "ML": {
@@ -377,8 +385,14 @@ def main() -> None:
     if corrupt_question_ids:
         raise ValueError(f"Unrepaired embedded-font math in: {', '.join(corrupt_question_ids)}")
 
+    withdrawn = [question for question in questions if question["id"] in WITHDRAWN_QUESTION_IDS]
+    if {question["id"] for question in withdrawn} != WITHDRAWN_QUESTION_IDS:
+        raise ValueError("Some withdrawn question IDs were not found in the source PDF")
+    questions = [question for question in questions if question["id"] not in WITHDRAWN_QUESTION_IDS]
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(json.dumps(questions, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    WITHDRAWN_OUTPUT.write_text(json.dumps(withdrawn, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"Wrote {len(questions)} questions to {OUTPUT} ({OUTPUT.stat().st_size:,} bytes)")
 
 

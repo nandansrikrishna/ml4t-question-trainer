@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "../lib/supabase/client";
 import type { Json } from "../lib/supabase/database.types";
 import rawQuestions from "./data/questions.json";
+import withdrawnQuestions from "./data/withdrawn-questions.json";
 import questionKeys from "./data/question-keys.json";
 import { readExams, type ExamItem } from "../lib/practice-exam";
 import {
@@ -18,7 +19,9 @@ import {
   type CloudExam,
 } from "../lib/exam-sync";
 
-const byCode = new Map(rawQuestions.map((q) => [q.id, q]));
+// Earlier exams may contain a now-withdrawn question. Keep its content available
+// for that exam's review without returning it to study or new exam sampling.
+const byCode = new Map([...rawQuestions, ...withdrawnQuestions].map((q) => [q.id, q]));
 const byKey = new Map(
   Object.entries(questionKeys).map(([code, key]) => [key, byCode.get(code)!]),
 );

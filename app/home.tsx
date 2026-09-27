@@ -566,7 +566,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
               <article className="authority-card"><span className="eyebrow">Single source of truth</span><h3>The current published wording and keyed answers are authoritative for grading.</h3><p>Exam answer order may change, and some items may appear as direct negations. Suspected errors should be raised through the designated course channel before the exam.</p></article>
               <article className="ai-card"><span>PREP ONLY</span><h3>AI can be a study partner—not an exam partner.</h3><p>Use it to explain, compare, critique, or generate analogous practice. Verify explanations against the course materials and pool. Generative AI is prohibited during an active exam.</p></article>
             </div>
-            <p className="source-line">Built from all 938 questions in <strong>ML4T Exam Question Pool</strong>, revision 08.10.2026. This learning companion supports—but does not replace—lectures, readings, projects, or course announcements.</p>
+            <p className="source-line">Built from {QUESTIONS.length} active questions in <strong>ML4T Exam Question Pool</strong>, revision 08.10.2026. Withdrawn questions are excluded. This learning companion supports—but does not replace—lectures, readings, projects, or course announcements.</p>
           </section>
         )}
       </section>

@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {createExam,scoreExam} from '../lib/practice-exam.ts';
 import {acceptCloud,applyEdits,decodeCloudExam,itemEdits,mergeExamRecords,visibleExam} from '../lib/exam-sync.ts';
 const pool=JSON.parse(readFileSync(new URL('../app/data/questions.json',import.meta.url)));
+const withdrawn=JSON.parse(readFileSync(new URL('../app/data/withdrawn-questions.json',import.meta.url)));
 const record=()=>({cloud:createExam(pool,1,1000),revision:0,edits:[],acknowledged:[],submittedAt:null});
 const edit=(id,statement,value)=>({id,position:0,kind:'answer',statement,value,at:new Date(2000).toISOString()});
 test('local edits preserve True, False, unclassified and pins through serialization',()=>{
@@ -47,6 +48,18 @@ test('cloud review uses finalized scores and distinguishes unanswered from false
     items:r.cloud.items.map((item,n)=>({question_key:n,position:n,statement_order:item.order,answer_mask:1,answered_mask:3,pinned:false,score:1}))};
   const decoded=decodeCloudExam(response,byKey);
   assert.deepEqual(decoded.cloud.items[0].answers,[true,false,null,null,null]);assert.equal(scoreExam(decoded.cloud),40);
+});
+
+test('historical cloud exams can still decode a withdrawn question',()=>{
+  const r=record();
+  const historical=withdrawn[0];
+  const questions=[historical,...r.cloud.items.slice(1).map(item=>item.question)];
+  const byKey=new Map(questions.map((question,index)=>[index+1,question]));
+  const response={id:r.cloud.id,exam:1,started_at:new Date(1000).toISOString(),deadline:new Date(r.cloud.deadline).toISOString(),submitted_at:new Date(3000).toISOString(),revision:1,
+    items:r.cloud.items.map((item,index)=>({question_key:index+1,position:index,statement_order:item.order,answer_mask:0,answered_mask:0,pinned:false,score:0}))};
+  const decoded=decodeCloudExam(response,byKey);
+  assert.equal(decoded.cloud.items[0].question.id,historical.id);
+  assert.equal(decoded.cloud.items.length,40);
 });
 
 test('auth return paths allow only app tabs',async()=>{

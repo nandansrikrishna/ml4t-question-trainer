@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createExam, finishExam, scoreExam, completeQuestion, readExams, EXAM_DURATION, shuffle } from '../lib/practice-exam.ts';
 const pool = JSON.parse(readFileSync(new URL('../app/data/questions.json', import.meta.url)));
+const withdrawn = JSON.parse(readFileSync(new URL('../app/data/withdrawn-questions.json', import.meta.url)));
+const keys = JSON.parse(readFileSync(new URL('../app/data/question-keys.json', import.meta.url)));
+test('withdrawn questions stay out of the active pool while retaining historical keys', () => {
+  const ids = new Set(withdrawn.map(question => question.id));
+  assert.deepEqual([...ids].sort(), [
+    'ML-D1G2Q8', 'ML-D2G4Q5', 'ML-D3G1Q4', 'ML-D3G3Q6',
+    'ML-D5G5Q4', 'ML-D6G4Q6', 'ML-D6G5Q5', 'ML-D6G5Q6',
+    'QF-D8G4Q1',
+  ]);
+  assert.equal(pool.length, 929);
+  assert.ok(pool.every(question => !ids.has(question.id)));
+  assert.ok(withdrawn.every(question => Number.isInteger(keys[question.id])));
+});
 for (const exam of [1, 2]) {
   test(`Exam ${exam} samples two unique questions per domain and preserves shuffled statement identities`, () => {
     for (let run = 0; run < 20; run++) {
