@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test:review": "node --experimental-strip-types --test tests/review-queue.test.mjs",
     "test:exam": "node --experimental-strip-types --test tests/practice-exam.test.mjs tests/exam-sync.test.mjs",
-    "test:saved": "node --experimental-strip-types --test tests/saved-questions.test.mjs"
+    "test:saved": "node --experimental-strip-types --test tests/saved-questions.test.mjs",
+    "test:pool": "node --experimental-strip-types --test tests/pool-map.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.5",

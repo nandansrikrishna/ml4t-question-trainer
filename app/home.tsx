@@ -31,6 +31,7 @@ import questionKeys from "./data/question-keys.json";
 import rawQuestions from "./data/questions.json";
 import ThemeToggle from "./theme-toggle";
 import PracticeExam from "./practice-exam";
+import PoolMap from "./pool-map";
 import { SaveQuestionButton } from "./save-question-button";
 import { useSavedQuestions } from "./use-saved-questions";
 import { savedQuestionIndexes } from "../lib/saved-questions";
@@ -253,6 +254,18 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     studyState.setSessionCorrect(0); studyState.setSessionStatements(0); studyState.setSessionSkipped(0); setSetupOpen(false); router.push("/");
   };
 
+  // Pool map selections, most useful first; sessions cap at 50 like custom decks.
+  const practiceQuestions = (indexes: number[]) => {
+    const startedAt = Date.now();
+    studyState.setSession(
+      buildQuestionQueue(indexes.map((index) => ({ item: QUESTIONS[index], index })), progressByQuestion, startedAt).slice(0, 50),
+    );
+    studyState.setSessionKind("custom");
+    studyState.setDailyReplayStarted(false);
+    studyState.setCurrent(0); studyState.setSelected([]); studyState.setRevealed(false); studyState.setSessionDone(false);
+    studyState.setSessionCorrect(0); studyState.setSessionStatements(0); studyState.setSessionSkipped(0); router.push("/");
+  };
+
   const startStudyMore = () => {
     const startedAt = Date.now();
     const candidates = QUESTIONS.map((item, index) => ({ item, index }))
@@ -346,18 +359,6 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [authOpen, checkAnswer, nextQuestion, revealed, sessionDone, setupOpen, studySessionVisible, setSelected]);
-
-  const domainStats = useMemo(() => {
-    const rows = new Map<string, { label: string; area: string; reviewed: number; correct: number; total: number; due: number }>();
-    QUESTIONS.forEach((item) => {
-      const key = `${item.exam}-${item.area}-${item.domainIndex}`;
-      const row = rows.get(key) ?? { label: `Exam ${item.exam} · ${item.domain}`, area: item.area, reviewed: 0, correct: 0, total: 0, due: 0 };
-      const progress = progressByQuestion[item.id];
-      if (progress) { row.reviewed += 1; row.correct += progress.statementCorrect; row.total += progress.statementTotal; if (progress.nextDue <= now) row.due += 1; }
-      rows.set(key, row);
-    });
-    return [...rows.values()].sort((a, b) => (a.total ? a.correct / a.total : -1) - (b.total ? b.correct / b.total : -1));
-  }, [progressByQuestion, now]);
 
   const resetProgress = () => {
     if (!hydrated || syncStatus === "syncing") return;
@@ -537,18 +538,10 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
               <article><span>Due reviews</span><strong>{dueReviewCount}</strong><small>previous answers ready to revisit</small></article>
               <article><span>Learning coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{unseenCount} unseen · {user ? "cloud synced" : "on this device"}</small></article>
             </div>
-            <div className="domain-table-card">
-              <div className="section-title"><div><span className="eyebrow">Diagnosis by domain</span><h2>Lowest confidence first</h2></div><button className="text-button" disabled={!hydrated || syncStatus === "syncing"} onClick={resetProgress}><RotateCcw aria-hidden="true" /> Reset progress</button></div>
-              <div className="domain-table">
-                {domainStats.map((row) => {
-                  const rowAccuracy = row.total ? Math.round((row.correct / row.total) * 100) : 0;
-                  return <div className="domain-row" key={row.label}>
-                    <div><span className="area-tag">{row.area === "Machine Learning" ? "ML" : "QF"}</span><strong>{row.label}</strong></div>
-                    <div className="bar"><span style={{ width: `${rowAccuracy}%` }} /></div>
-                    <span>{row.total ? `${rowAccuracy}%` : "Not started"}</span><small>{row.reviewed} seen · {row.due} due</small>
-                  </div>;
-                })}
-              </div>
+            <PoolMap questions={QUESTIONS} progress={progressByQuestion} saved={bookmarks.items} savedReady={bookmarks.ready} onToggleSaved={bookmarks.toggle} now={now} hydrated={hydrated} onPractice={practiceQuestions} />
+            <div className="progress-reset">
+              <p>Reset clears study answers {user ? "on every synced device" : "on this device"}. Exam history is kept.</p>
+              <button className="text-button" disabled={!hydrated || syncStatus === "syncing"} onClick={resetProgress}><RotateCcw aria-hidden="true" /> Reset progress</button>
             </div>
           </section>
         )}
