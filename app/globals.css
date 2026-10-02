@@ -495,6 +495,13 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .exam-history-row { display: grid; width: 100%; grid-template-columns: 2fr 1fr 1fr 20px; align-items: center; text-align: left; gap: 15px; padding: 20px 0; background: none; border: 0; border-top: 1px solid var(--border); color: var(--foreground); }
 .exam-history-row small, .exam-toolbar strong small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted-foreground); font-weight: 400; }
 .exam-resume { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 20px; border-color: var(--primary); }
+.exam-resume-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.exam-history-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; border-top: 1px solid var(--border); }
+.exam-history-item .exam-history-row { border-top: 0; }
+.exam-delete { display: inline-flex; padding: 8px; border: 0; border-radius: 8px; background: none; color: var(--muted-foreground); }
+.exam-delete:hover, .exam-delete:focus-visible { color: var(--destructive); background: var(--danger-soft); }
+.exam-button.exam-danger:hover { color: var(--destructive); border-color: var(--danger-border); }
+.exam-confirm .new-session.danger { background: var(--destructive-solid); color: var(--destructive-foreground); }
 .exam-alert { background: var(--warning-soft); border: 1px solid var(--warning-border); color: var(--warning-foreground); padding: 15px; border-radius: 10px; font-size: 13px; }
 .exam-toolbar { display: flex; position: sticky; top: 0; z-index: 20; align-items: center; gap: 14px; padding: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-sm); margin-bottom: 22px; }
 .exam-toolbar > strong { font-size: 14px; }

@@ -34,6 +34,7 @@ export type CloudExam = {
   conflict?: boolean;
   acknowledged?: boolean;
   finalizedElsewhere?: boolean;
+  discarded?: boolean;
   items: {
     question_key: number;
     position: number;
@@ -46,6 +47,53 @@ export type CloudExam = {
 };
 export const EXAM_CACHE_PREFIX = "ml4t-practice-exams-v2:";
 export const EXAM_RECOVERY_OWNER = "ml4t-practice-exam-recovery-owner";
+export const EXAM_DELETED_SUFFIX = ":deleted";
+// Exam IDs deleted from this account: true once the server has confirmed the
+// deletion. Tabs and devices consult this ledger so stale caches cannot restore
+// a deleted exam.
+export type DeletedExams = Record<string, boolean>;
+// A session listing may predate exams started in another tab while it ran.
+export const LISTING_GRACE_MS = 60_000;
+
+export function readDeletedExams(raw: string | null): DeletedExams {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([, v]) => typeof v === "boolean"),
+    );
+  } catch {
+    return {};
+  }
+}
+export function mergeDeletedExams(
+  a: DeletedExams,
+  b: DeletedExams,
+): DeletedExams {
+  const merged = { ...a };
+  for (const [id, confirmed] of Object.entries(b))
+    merged[id] = merged[id] === true || confirmed;
+  return merged;
+}
+export function withoutDeleted(records: CachedExam[], deleted: DeletedExams) {
+  return records.filter((r) => !Object.hasOwn(deleted, r.cloud.id));
+}
+// IDs of cached exams that a complete session listing no longer contains, i.e.
+// exams deleted or discarded elsewhere.
+export function missingFromListing(
+  records: CachedExam[],
+  listed: ReadonlySet<string>,
+  listedAt: number,
+) {
+  return records
+    .filter(
+      (r) =>
+        !listed.has(r.cloud.id) &&
+        r.cloud.startedAt < listedAt - LISTING_GRACE_MS,
+    )
+    .map((r) => r.cloud.id);
+}
 
 export function decodeCloudExam(
   data: CloudExam,

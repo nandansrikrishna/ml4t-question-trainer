@@ -11,6 +11,7 @@ import {
   Clock3,
   GripVertical,
   Pin,
+  Trash2,
   X,
 } from "lucide-react";
 import { useExamSync } from "./use-exam-sync";
@@ -47,9 +48,12 @@ export default function PracticeExam({
     start: startCloud,
     updateItem: updateCloudItem,
     finish,
+    remove,
     now,
     status,
     error,
+    notice,
+    dismissNotice,
     pending,
     recovered,
     downloadRecovery,
@@ -58,7 +62,10 @@ export default function PracticeExam({
   const [selected, setSelected] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [calculator, setCalculator] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [confirm, setConfirm] = useState<{
+    kind: "submit" | "cancel" | "delete";
+    id: string;
+  } | null>(null);
   const session = sessions.find((s) => s.id === selected);
   const active = sessions.find((s) => s.submittedAt === null);
   const updateItem = useCallback(
@@ -85,6 +92,51 @@ export default function PracticeExam({
   const review = session?.submittedAt !== null;
   const answered = session?.items.filter(completeQuestion).length ?? 0;
   const history = sessions.filter((s) => s.submittedAt !== null);
+  const confirmed = sessions.find((s) => s.id === confirm?.id);
+  const confirmAnswered = confirmed?.items.filter(completeQuestion).length ?? 0;
+  // Close submit/cancel prompts if the timer ends the exam while they are open.
+  const dialog =
+    !confirmed ||
+    !confirm ||
+    (confirm.kind !== "delete" && confirmed.submittedAt !== null)
+      ? null
+      : confirm.kind === "submit"
+        ? {
+            eyebrow: "Ready to finish?",
+            title: `Submit Exam ${confirmed.exam}?`,
+            body: `${
+              40 - confirmAnswered > 0
+                ? `${40 - confirmAnswered} questions are not fully answered. Unclassified statements receive zero points.`
+                : "You have classified every statement."
+            } Your answers will be locked and your result revealed.`,
+            keep: "Keep working",
+            action: "Submit and see result",
+          }
+        : confirm.kind === "cancel"
+          ? {
+              eyebrow: "Cancel exam",
+              title: `Cancel Exam ${confirmed.exam}?`,
+              body: "This exam and its answers will be removed. Nothing is scored or added to your progress, and you can start a new exam right away.",
+              keep: "Keep exam",
+              action: "Cancel exam",
+            }
+          : {
+              eyebrow: "Delete from history",
+              title: `Delete this Exam ${confirmed.exam} result?`,
+              body: `The ${Math.round(scoreExam(confirmed) / 2)}% result from ${new Date(confirmed.startedAt).toLocaleString()} and its answers will be permanently removed, and your progress will be recalculated without them. This cannot be undone.`,
+              keep: "Keep result",
+              action: "Delete result",
+            };
+  const confirmAction = () => {
+    if (!confirm) return;
+    if (confirm.kind === "submit") finish(confirm.id);
+    else {
+      remove(confirm.id);
+      setSelected(null);
+    }
+    setConfirm(null);
+    window.scrollTo(0, 0);
+  };
   return (
     <div className="exam-root" hidden={!visible}>
       {error && (
@@ -107,6 +159,14 @@ export default function PracticeExam({
               </button>
             ))}
         </div>
+      )}
+      {notice && (
+        <p className="exam-alert" role="status">
+          {notice}{" "}
+          <button className="text-button" onClick={dismissNotice}>
+            Dismiss
+          </button>
+        </p>
       )}
       {pending && (
         <p className="exam-alert" role="status">
@@ -158,14 +218,22 @@ export default function PracticeExam({
                   The timer continues while you are away.
                 </p>
               </div>
-              <button
-                className="new-session"
-                onClick={() => {
-                  setSelected(active.id);
-                }}
-              >
-                Resume exam <ArrowRight size={16} />
-              </button>
+              <div className="exam-resume-actions">
+                <button
+                  className="exam-button"
+                  onClick={() => setConfirm({ kind: "cancel", id: active.id })}
+                >
+                  Cancel exam
+                </button>
+                <button
+                  className="new-session"
+                  onClick={() => {
+                    setSelected(active.id);
+                  }}
+                >
+                  Resume exam <ArrowRight size={16} />
+                </button>
+              </div>
             </div>
           )}
           <div className="exam-options">
@@ -217,33 +285,42 @@ export default function PracticeExam({
               </div>
             ) : (
               history.map((s) => (
-                <button
-                  className="exam-history-row"
-                  key={s.id}
-                  onClick={() => {
-                    setSelected(s.id);
+                <div className="exam-history-item" key={s.id}>
+                  <button
+                    className="exam-history-row"
+                    onClick={() => {
+                      setSelected(s.id);
 
-                    window.scrollTo(0, 0);
-                  }}
-                >
-                  <span>
-                    <strong>Exam {s.exam}</strong>
-                    <small>{new Date(s.startedAt).toLocaleString()}</small>
-                  </span>
-                  <span>
-                    <strong>{Math.round(scoreExam(s) / 2)}%</strong>
-                    <small>{scoreExam(s)}/200 points</small>
-                  </span>
-                  <span>
-                    <strong>{clockText(s.submittedAt! - s.startedAt)}</strong>
-                    <small>
-                      {s.submittedAt === s.deadline
-                        ? "Time limit reached"
-                        : "Submitted"}
-                    </small>
-                  </span>
-                  <ArrowRight size={18} />
-                </button>
+                      window.scrollTo(0, 0);
+                    }}
+                  >
+                    <span>
+                      <strong>Exam {s.exam}</strong>
+                      <small>{new Date(s.startedAt).toLocaleString()}</small>
+                    </span>
+                    <span>
+                      <strong>{Math.round(scoreExam(s) / 2)}%</strong>
+                      <small>{scoreExam(s)}/200 points</small>
+                    </span>
+                    <span>
+                      <strong>{clockText(s.submittedAt! - s.startedAt)}</strong>
+                      <small>
+                        {s.submittedAt === s.deadline
+                          ? "Time limit reached"
+                          : "Submitted"}
+                      </small>
+                    </span>
+                    <ArrowRight size={18} />
+                  </button>
+                  <button
+                    className="exam-delete"
+                    aria-label={`Delete Exam ${s.exam} from ${new Date(s.startedAt).toLocaleString()}`}
+                    title="Delete from history"
+                    onClick={() => setConfirm({ kind: "delete", id: s.id })}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               ))
             )}
           </section>
@@ -255,7 +332,7 @@ export default function PracticeExam({
               className="exam-button"
               onClick={() => {
                 setSelected(null);
-                setConfirming(false);
+                setConfirm(null);
               }}
             >
               <ArrowLeft size={16} /> {review ? "History" : "Return"}
@@ -284,13 +361,28 @@ export default function PracticeExam({
             >
               <Calculator size={19} />
             </button>
-            {!review && (
+            {review ? (
               <button
-                className="new-session"
-                onClick={() => setConfirming(true)}
+                className="exam-button exam-danger"
+                onClick={() => setConfirm({ kind: "delete", id: session.id })}
               >
-                Submit exam
+                <Trash2 size={16} /> Delete
               </button>
+            ) : (
+              <>
+                <button
+                  className="exam-button exam-danger"
+                  onClick={() => setConfirm({ kind: "cancel", id: session.id })}
+                >
+                  Cancel exam
+                </button>
+                <button
+                  className="new-session"
+                  onClick={() => setConfirm({ kind: "submit", id: session.id })}
+                >
+                  Submit exam
+                </button>
+              </>
             )}
           </div>
           {review && (
@@ -418,63 +510,54 @@ export default function PracticeExam({
               {!review && (
                 <button
                   className="new-session exam-bottom-submit"
-                  onClick={() => setConfirming(true)}
+                  onClick={() => setConfirm({ kind: "submit", id: session.id })}
                 >
                   Finish and submit exam <ArrowRight size={17} />
                 </button>
               )}
             </div>
           </div>
-          {confirming && !review && (
-            <div className="modal-backdrop">
-              <section
-                className="exam-confirm"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="submit-title"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setConfirming(false);
-                  if (e.key === "Tab") {
-                    e.preventDefault();
-                    const buttons = e.currentTarget.querySelectorAll("button");
-                    (document.activeElement === buttons[0]
-                      ? buttons[1]
-                      : buttons[0]
-                    ).focus();
-                  }
-                }}
-              >
-                <span className="eyebrow">Ready to finish?</span>
-                <h2 id="submit-title">Submit Exam {session.exam}?</h2>
-                <p>
-                  {40 - answered > 0
-                    ? `${40 - answered} questions are not fully answered. Unclassified statements receive zero points.`
-                    : "You have classified every statement."}{" "}
-                  Your answers will be locked and your result revealed.
-                </p>
-                <div>
-                  <button
-                    autoFocus
-                    className="exam-button"
-                    onClick={() => setConfirming(false)}
-                  >
-                    Keep working
-                  </button>
-                  <button
-                    className="new-session"
-                    onClick={() => {
-                      finish(session.id);
-                      setConfirming(false);
-                      window.scrollTo(0, 0);
-                    }}
-                  >
-                    Submit and see result
-                  </button>
-                </div>
-              </section>
-            </div>
-          )}
         </>
+      )}
+      {dialog && (
+        <div className="modal-backdrop">
+          <section
+            className="exam-confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exam-confirm-title"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setConfirm(null);
+              if (e.key === "Tab") {
+                e.preventDefault();
+                const buttons = e.currentTarget.querySelectorAll("button");
+                (document.activeElement === buttons[0]
+                  ? buttons[1]
+                  : buttons[0]
+                ).focus();
+              }
+            }}
+          >
+            <span className="eyebrow">{dialog.eyebrow}</span>
+            <h2 id="exam-confirm-title">{dialog.title}</h2>
+            <p>{dialog.body}</p>
+            <div>
+              <button
+                autoFocus
+                className="exam-button"
+                onClick={() => setConfirm(null)}
+              >
+                {dialog.keep}
+              </button>
+              <button
+                className={`new-session ${confirm?.kind === "submit" ? "" : "danger"}`}
+                onClick={confirmAction}
+              >
+                {dialog.action}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
       {calculator && <ExamCalculator close={() => setCalculator(false)} />}
     </div>

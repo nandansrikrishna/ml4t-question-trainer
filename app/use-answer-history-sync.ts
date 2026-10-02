@@ -14,6 +14,7 @@ import {
   getMissingAttempts,
   mergeAttempts,
   readAttemptMap,
+  withoutDeletedExamAttempts,
   writeAttemptMap,
   type AnswerAttempt,
   type AttemptMap,
@@ -210,6 +211,9 @@ export function useAnswerHistorySync(questionKeys: Record<string, number>) {
         attemptResult,
         codeByQuestionKey,
       );
+      // Only the server creates exam attempts, so a cached one missing from the
+      // cloud belongs to a deleted exam.
+      attemptCandidate = withoutDeletedExamAttempts(attemptCandidate, cloudAttempts);
       const cloudLegacy = progressRowsToReviews(
         progressResult.data ?? [],
         codeByQuestionKey,
@@ -248,7 +252,10 @@ export function useAnswerHistorySync(questionKeys: Record<string, number>) {
 
       if (run !== syncRun.current || currentUser.current?.id !== userId) return;
       const mergedAttempts = mergeAttempts(
-        readAttemptMap(window.localStorage, attemptCacheKey),
+        withoutDeletedExamAttempts(
+          readAttemptMap(window.localStorage, attemptCacheKey),
+          cloudAttempts,
+        ),
         mergeAttempts(attemptCandidate, cloudAttempts),
       );
       const mergedLegacy = mergeByNewest(legacyCandidate, cloudLegacy);
@@ -392,11 +399,13 @@ export function useAnswerHistorySync(questionKeys: Record<string, number>) {
     };
     window.addEventListener("online", handleOnline);
     window.addEventListener("ml4t-exam-submitted", handleOnline);
+    window.addEventListener("ml4t-exam-deleted", handleOnline);
 
     return () => {
       subscription.unsubscribe();
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("ml4t-exam-submitted", handleOnline);
+      window.removeEventListener("ml4t-exam-deleted", handleOnline);
       if (flushTimer.current) clearTimeout(flushTimer.current);
     };
   }, [initializeUser, supabase, switchToDevice]);

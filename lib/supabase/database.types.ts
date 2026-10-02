@@ -176,6 +176,7 @@ export type Database = {
         Returns: Json;
       };
       get_practice_exam: { Args: { p_session: string }; Returns: Json };
+      delete_practice_exam: { Args: { p_session: string }; Returns: boolean };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

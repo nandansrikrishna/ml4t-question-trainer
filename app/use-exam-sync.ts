@@ -11,12 +11,18 @@ import {
   acceptCloud,
   decodeCloudExam,
   EXAM_CACHE_PREFIX,
+  EXAM_DELETED_SUFFIX,
   EXAM_RECOVERY_OWNER,
   itemEdits,
+  mergeDeletedExams,
   mergeExamRecords,
+  missingFromListing,
+  readDeletedExams,
   visibleExam,
+  withoutDeleted,
   type CachedExam,
   type CloudExam,
+  type DeletedExams,
 } from "../lib/exam-sync";
 
 // Earlier exams may contain a now-withdrawn question. Keep its content available
@@ -64,8 +70,10 @@ export function useExamSync(userId: string | null) {
   const [starting, setStarting] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [now, setNow] = useState(0);
   const current = useRef<CachedExam[]>([]);
+  const deleted = useRef<DeletedExams>({});
   const ownerRef = useRef<string | null>(null);
   const authRef = useRef(userId);
   const offset = useRef(0);
@@ -73,6 +81,34 @@ export function useExamSync(userId: string | null) {
   const startingRef = useRef(false);
   const runSync = useRef<() => Promise<void>>(async () => {});
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Include deletions made in other tabs before filtering or writing records.
+  const loadDeleted = useCallback(() => {
+    const currentOwner = ownerRef.current;
+    if (!currentOwner) return deleted.current;
+    try {
+      deleted.current = mergeDeletedExams(
+        deleted.current,
+        readDeletedExams(
+          localStorage.getItem(EXAM_CACHE_PREFIX + currentOwner + EXAM_DELETED_SUFFIX),
+        ),
+      );
+    } catch {}
+    return deleted.current;
+  }, []);
+  const markDeleted = useCallback(
+    (entries: DeletedExams) => {
+      const currentOwner = ownerRef.current;
+      if (!currentOwner) return;
+      deleted.current = mergeDeletedExams(loadDeleted(), entries);
+      try {
+        localStorage.setItem(
+          EXAM_CACHE_PREFIX + currentOwner + EXAM_DELETED_SUFFIX,
+          JSON.stringify(deleted.current),
+        );
+      } catch {}
+    },
+    [loadDeleted],
+  );
   const write = useCallback((next: CachedExam[], merge = true) => {
     const currentOwner = ownerRef.current;
     if (!currentOwner) return;
@@ -82,6 +118,7 @@ export function useExamSync(userId: string | null) {
     } catch {
       /* Keep in-memory work if the storage read fails. */
     }
+    result = withoutDeleted(result, loadDeleted());
     current.current = result;
     setRecords(result);
     try {
@@ -118,7 +155,7 @@ export function useExamSync(userId: string | null) {
         "Browser autosave is unavailable. Keep this page open; cloud sync will still retry.",
       );
     }
-  }, []);
+  }, [loadDeleted]);
   const schedule = useCallback(() => {
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => void runSync.current(), 700);
@@ -146,6 +183,31 @@ export function useExamSync(userId: string | null) {
     },
     [write, schedule],
   );
+  const flushDeletes = useCallback(async () => {
+    let confirmed = false;
+    for (const [id, done] of Object.entries(loadDeleted())) {
+      if (done) continue;
+      const { error: rpcError } = await supabase
+        .rpc("delete_practice_exam", { p_session: id })
+        .abortSignal(AbortSignal.timeout(12000));
+      if (rpcError) throw rpcError;
+      markDeleted({ [id]: true });
+      confirmed = true;
+    }
+    // Deleted exam attempts change per-question progress.
+    if (confirmed) window.dispatchEvent(new Event("ml4t-exam-deleted"));
+  }, [loadDeleted, markDeleted, supabase]);
+  const drop = useCallback(
+    (ids: string[], confirmed: boolean) => {
+      if (confirmed)
+        markDeleted(Object.fromEntries(ids.map((id) => [id, true])));
+      write(
+        current.current.filter((r) => !ids.includes(r.cloud.id)),
+        false,
+      );
+    },
+    [markDeleted, write],
+  );
   const synchronize = useCallback(async () => {
     const own = ownerRef.current;
     if (!own || authRef.current !== own || syncing.current) return;
@@ -154,6 +216,8 @@ export function useExamSync(userId: string | null) {
     try {
       if (!navigator.onLine) throw Error("Offline");
       setStatus("Syncing exam…");
+      await flushDeletes();
+      if (!stillOwn()) return;
       // Flush local edits before reading cloud state, including late delivery of
       // edits made before the deadline while offline. No background start calls.
       for (const original of [...current.current]) {
@@ -201,14 +265,30 @@ export function useExamSync(userId: string | null) {
               p_request_id: flight.id,
             })
             .abortSignal(AbortSignal.timeout(12000));
+          // Deleted on another device, or discarded by an earlier request
+          // whose response was lost.
+          if (rpcError?.message === "Exam not found" && stillOwn()) {
+            drop([record.cloud.id], true);
+            window.dispatchEvent(new Event("ml4t-exam-deleted"));
+            break;
+          }
           if (rpcError) throw rpcError;
           if (!stillOwn()) return;
           const response = data as unknown as CloudExam;
-          const cloud = decodeCloudExam(response, byKey);
           offset.current = Date.parse(response.server_now) - Date.now();
+          if (response.discarded) {
+            drop([record.cloud.id], true);
+            setNotice(
+              `Time ran out on Exam ${record.cloud.exam} before any answers were recorded, so it was discarded and not scored.`,
+            );
+            break;
+          }
+          const cloud = decodeCloudExam(response, byKey);
           const latest = current.current.find(
             (r) => r.cloud.id === record.cloud.id,
-          )!;
+          );
+          // Deleted locally while this request was in flight.
+          if (!latest) break;
           // Incorporate other tabs before acknowledging this exact request.
           let merged = latest;
           try {
@@ -242,7 +322,11 @@ export function useExamSync(userId: string | null) {
         /* Preserve unreadable legacy data. */
       }
       for (const session of legacy) {
-        if (current.current.some((r) => r.cloud.id === session.id)) continue;
+        if (
+          current.current.some((r) => r.cloud.id === session.id) ||
+          Object.hasOwn(loadDeleted(), session.id)
+        )
+          continue;
         const { data, error: importError } = await supabase
           .rpc("import_practice_exam", {
             p_session: session.id,
@@ -272,7 +356,11 @@ export function useExamSync(userId: string | null) {
         localStorage.setItem(importedKey, "true");
       } catch {}
       // Page the session list; fetch a snapshot only when a revision changed.
+      const listed = new Set<string>();
+      const listedAt = Date.now() + offset.current;
+      let pages = 0;
       for (let from = 0; ; from += 200) {
+        pages++;
         const { data, error: fetchError } = await supabase
           .from("user_exam_sessions")
           .select("*")
@@ -284,6 +372,8 @@ export function useExamSync(userId: string | null) {
         if (fetchError) throw fetchError;
         if (!stillOwn()) return;
         for (const row of data ?? []) {
+          listed.add(row.id);
+          if (Object.hasOwn(loadDeleted(), row.id)) continue;
           const existing = current.current.find((r) => r.cloud.id === row.id);
           if (existing && existing.revision === row.revision) continue;
           const { data: snapshot, error: readError } = await supabase
@@ -302,6 +392,14 @@ export function useExamSync(userId: string | null) {
           );
         }
         if (!data || data.length < 200) break;
+      }
+      // Remove exams deleted elsewhere. Only a single-page listing is a
+      // consistent snapshot, so record those in the ledger; otherwise a row
+      // shifted between pages is simply fetched again on the next sync.
+      const missing = missingFromListing(current.current, listed, listedAt);
+      if (missing.length) {
+        drop(missing, pages === 1);
+        window.dispatchEvent(new Event("ml4t-exam-deleted"));
       }
       if (stillOwn())
         setStatus(
@@ -327,7 +425,7 @@ export function useExamSync(userId: string | null) {
     } finally {
       syncing.current = false;
     }
-  }, [supabase, write]);
+  }, [drop, flushDeletes, loadDeleted, supabase, write]);
   useEffect(() => {
     runSync.current = synchronize;
   }, [synchronize]);
@@ -343,8 +441,9 @@ export function useExamSync(userId: string | null) {
       if (nextOwner && nextOwner !== ownerRef.current) {
         ownerRef.current = nextOwner;
         setOwner(nextOwner);
+        deleted.current = {};
         try {
-          const cached = readCache(nextOwner);
+          const cached = withoutDeleted(readCache(nextOwner), loadDeleted());
           current.current = cached;
           setRecords(cached);
           offset.current =
@@ -368,7 +467,7 @@ export function useExamSync(userId: string | null) {
           "Sign in again to sync. Your active exam is still saved on this device.",
         );
     });
-  }, [userId]);
+  }, [loadDeleted, userId]);
   useEffect(() => {
     const tick = () => {
       const time = Date.now() + offset.current;
@@ -385,14 +484,15 @@ export function useExamSync(userId: string | null) {
     const retry = setInterval(() => void runSync.current(), 15000);
     const online = () => void runSync.current();
     const storage = (event: StorageEvent) => {
+      const prefix = EXAM_CACHE_PREFIX + ownerRef.current;
       if (
         ownerRef.current &&
-        event.key === EXAM_CACHE_PREFIX + ownerRef.current
+        (event.key === prefix || event.key === prefix + EXAM_DELETED_SUFFIX)
       ) {
         try {
-          const next = mergeRecords(
-            current.current,
-            readCache(ownerRef.current),
+          const next = withoutDeleted(
+            mergeRecords(current.current, readCache(ownerRef.current)),
+            loadDeleted(),
           );
           current.current = next;
           setRecords(next);
@@ -411,7 +511,7 @@ export function useExamSync(userId: string | null) {
       window.removeEventListener("focus", online);
       window.removeEventListener("storage", storage);
     };
-  }, [finish, schedule]);
+  }, [finish, loadDeleted, schedule]);
   const updateItem = useCallback(
     (id: string, index: number, update: (item: ExamItem) => ExamItem) => {
       const record = current.current.find((r) => r.cloud.id === id);
@@ -454,6 +554,9 @@ export function useExamSync(userId: string | null) {
       try {
         // Persist the start request before sending it. A failed response must never
         // create a second exam (or a second deadline) when the user retries.
+        // A queued cancellation must reach the server first, or the start call
+        // would return the cancelled exam as the account's active session.
+        await flushDeletes();
         let request = localStorage.getItem(EXAM_CACHE_PREFIX + own + ":start");
         if (!request) {
           request = crypto.randomUUID();
@@ -490,7 +593,19 @@ export function useExamSync(userId: string | null) {
         setStarting(false);
       }
     },
-    [supabase, write],
+    [flushDeletes, supabase, write],
+  );
+  // Cancels an active exam or deletes one from history. The record disappears
+  // immediately; the server deletion is retried until it succeeds.
+  const remove = useCallback(
+    (id: string) => {
+      if (!ownerRef.current) return;
+      markDeleted({ [id]: false });
+      write(current.current);
+      setStatus("Saved on this device · deletion queued");
+      schedule();
+    },
+    [markDeleted, schedule, write],
   );
   const downloadRecovery = () => {
     const recovery = current.current
@@ -531,9 +646,12 @@ export function useExamSync(userId: string | null) {
     start,
     updateItem,
     finish,
+    remove,
     now,
     status,
     error,
+    notice,
+    dismissNotice: () => setNotice(""),
     pending: records.some(
       (r) => r.cloud.submittedAt === null && r.submittedAt !== null,
     ),

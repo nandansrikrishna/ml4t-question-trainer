@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createExam,scoreExam} from '../lib/practice-exam.ts';
-import {acceptCloud,applyEdits,decodeCloudExam,itemEdits,mergeExamRecords,visibleExam} from '../lib/exam-sync.ts';
+import {acceptCloud,applyEdits,decodeCloudExam,itemEdits,mergeDeletedExams,mergeExamRecords,missingFromListing,readDeletedExams,visibleExam,withoutDeleted} from '../lib/exam-sync.ts';
+import {withoutDeletedExamAttempts} from '../lib/answer-history.ts';
 const pool=JSON.parse(readFileSync(new URL('../app/data/questions.json',import.meta.url)));
 const withdrawn=JSON.parse(readFileSync(new URL('../app/data/withdrawn-questions.json',import.meta.url)));
 const record=()=>({cloud:createExam(pool,1,1000),revision:0,edits:[],acknowledged:[],submittedAt:null});
@@ -77,4 +78,20 @@ test('same-millisecond edits keep input order and a finalized snapshot clears st
   const final={...a,cloud:{...a.cloud,submittedAt:3000},revision:1,acknowledged:a.edits.map(e=>e.id),edits:[]};
   const restored=mergeExamRecords({...a,flight},final);
   assert.equal(restored.flight,undefined);assert.equal(restored.edits.length,0);
+});
+test('deleted-exam ledger hides cached exams and keeps server confirmation sticky',()=>{
+  const a=record(),b=record();
+  const ledger=mergeDeletedExams(readDeletedExams(JSON.stringify({[a.cloud.id]:true,bad:1})),{[a.cloud.id]:false,[b.cloud.id]:false});
+  assert.deepEqual(ledger,{[a.cloud.id]:true,[b.cloud.id]:false});
+  assert.deepEqual(withoutDeleted([a,b,record()],ledger).length,1);
+  assert.deepEqual(readDeletedExams('not json'),{});
+});
+test('listing prunes only older exams it does not contain',()=>{
+  const listed=record(),gone=record(),fresh={...record(),cloud:{...record().cloud,startedAt:100_000}};
+  assert.deepEqual(missingFromListing([listed,gone,fresh],new Set([listed.cloud.id]),120_000),[gone.cloud.id]);
+});
+test('cached exam attempts missing from the cloud are dropped; practice attempts stay',()=>{
+  const at=(id,examSessionId)=>({id,questionCode:'ML-D1G1Q1',answerMask:0,score:0,answeredAt:1,source:examSessionId?'exam':'practice',examSessionId});
+  const cached={kept:at('kept','s1'),deleted:at('deleted','s2'),practice:at('practice')};
+  assert.deepEqual(Object.keys(withoutDeletedExamAttempts(cached,{kept:cached.kept})),['kept','practice']);
 });

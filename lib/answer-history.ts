@@ -85,6 +85,12 @@ export function getMissingAttempts(candidate: AttemptMap, baseline: AttemptMap) 
   );
 }
 
+export function withoutDeletedExamAttempts(attempts: AttemptMap, cloud: AttemptMap) {
+  return Object.fromEntries(
+    Object.entries(attempts).filter(([id, attempt]) => !attempt.examSessionId || cloud[id]),
+  );
+}
+
 export function attemptRowsToMap(
   rows: AttemptRow[],
   codeByQuestionKey: ReadonlyMap<number, string>,

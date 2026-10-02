@@ -79,11 +79,45 @@ do $$ declare s jsonb;r jsonb;begin
     (s->>'deadline')::timestamptz,gen_random_uuid());
   if r->>'submitted_at'<>s->>'deadline' or r->'items'->0->>'answer_mask'<>'4' then raise exception 'Offline timeout recovery failed'; end if;
 end $$;
+-- Cancelling an active exam frees the account to start another.
+do $$ begin
+  perform public.start_practice_exam(1,'c807ccee-eeee-4eee-8eee-eeeeeeeeeeee');
+  if public.delete_practice_exam('c807ccee-eeee-4eee-8eee-eeeeeeeeeeee') is not true then raise exception 'Cancel failed'; end if;
+  if public.get_practice_exam('c807ccee-eeee-4eee-8eee-eeeeeeeeeeee') is not null then raise exception 'Cancelled exam still readable'; end if;
+  if public.delete_practice_exam('c807ccee-eeee-4eee-8eee-eeeeeeeeeeee') is not false then raise exception 'Repeated delete not a no-op'; end if;
+  if public.start_practice_exam(2,'c807ccff-ffff-4fff-8fff-ffffffffffff')->>'id'<>'c807ccff-ffff-4fff-8fff-ffffffffffff' then raise exception 'Cancel left an active exam'; end if;
+end $$;
 reset role;
+update public.user_exam_sessions set started_at=started_at-interval '91 minutes',deadline=deadline-interval '91 minutes' where id='c807ccff-ffff-4fff-8fff-ffffffffffff';
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"c807cc22-2222-4222-8222-222222222222","role":"authenticated"}';
+do $$ declare s jsonb;r jsonb;begin
+  -- A timed-out exam with only pins is discarded rather than scored as zero.
+  s:=public.get_practice_exam('c807ccff-ffff-4fff-8fff-ffffffffffff');
+  r:=public.sync_practice_exam('c807ccff-ffff-4fff-8fff-ffffffffffff',0,
+    jsonb_build_array(jsonb_build_object('position',0,'kind','pin','value',true,'at',s->>'started_at')),
+    (s->>'deadline')::timestamptz,'c807cc04-0000-4000-8000-000000000004');
+  if r->>'discarded' is distinct from 'true' or r->>'id' is distinct from 'c807ccff-ffff-4fff-8fff-ffffffffffff' then raise exception 'Unanswered timeout not discarded'; end if;
+  if exists(select 1 from public.user_exam_sessions where id='c807ccff-ffff-4fff-8fff-ffffffffffff') then raise exception 'Discarded exam retained'; end if;
+  if exists(select 1 from public.user_question_attempts where exam_session_id='c807ccff-ffff-4fff-8fff-ffffffffffff') then raise exception 'Discarded exam scored'; end if;
+  begin
+    perform public.sync_practice_exam('c807ccff-ffff-4fff-8fff-ffffffffffff',0,'[]',(s->>'deadline')::timestamptz,'c807cc04-0000-4000-8000-000000000004');
+    raise exception 'Discarded exam accepted a retry';
+  exception when insufficient_privilege then null; end;
+  -- Deleting a finished exam removes its scored attempts as well.
+  if public.delete_practice_exam('c807cccc-cccc-4ccc-8ccc-cccccccccccc') is not true then raise exception 'History delete failed'; end if;
+  if exists(select 1 from public.user_question_attempts where exam_session_id='c807cccc-cccc-4ccc-8ccc-cccccccccccc') then raise exception 'History delete kept attempts'; end if;
+  if exists(select 1 from public.user_exam_questions where session_id='c807cccc-cccc-4ccc-8ccc-cccccccccccc') then raise exception 'History delete kept questions'; end if;
+  if public.delete_practice_exam('c807ccaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa') is not false then raise exception 'Cross-user delete reported success'; end if;
+end $$;
+reset role;
+do $$ begin
+  if (select count(*) from public.user_question_attempts where exam_session_id='c807ccaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')<>40 then raise exception 'Cross-user delete removed attempts'; end if;
+end $$;
 set local role anon;
 do $$ begin
   begin perform public.start_practice_exam(1,gen_random_uuid());raise exception 'Anonymous start allowed';exception when insufficient_privilege then null;end;
 end $$;
 reset role;
-select 'PASS: sampling, deadlines, draft sync, conflicts, retries, scoring, final review, reset protection, RLS, offline timeout, anonymous denial' as result;
+select 'PASS: sampling, deadlines, draft sync, conflicts, retries, scoring, final review, reset protection, RLS, offline timeout, cancel, delete, unanswered timeout discard, anonymous denial' as result;
 rollback;
