@@ -8,11 +8,11 @@ const keys = JSON.parse(readFileSync(new URL('../app/data/question-keys.json', i
 test('withdrawn questions stay out of the active pool while retaining historical keys', () => {
   const ids = new Set(withdrawn.map(question => question.id));
   assert.deepEqual([...ids].sort(), [
-    'ML-D1G2Q8', 'ML-D2G4Q5', 'ML-D3G1Q4', 'ML-D3G3Q6',
+    'ML-D1G2Q8', 'ML-D2G4Q5', 'ML-D3G1Q4', 'ML-D3G1Q6', 'ML-D3G3Q6',
     'ML-D5G5Q4', 'ML-D6G4Q6', 'ML-D6G5Q5', 'ML-D6G5Q6',
     'QF-D8G4Q1',
   ]);
-  assert.equal(pool.length, 929);
+  assert.equal(pool.length, 928);
   assert.ok(pool.every(question => !ids.has(question.id)));
   assert.ok(withdrawn.every(question => Number.isInteger(keys[question.id])));
 });

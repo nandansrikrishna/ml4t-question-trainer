@@ -63,7 +63,7 @@ do $$ begin
   if exists(select 1 from public.user_exam_questions q join private.exam_pool p using(question_key)
     where q.session_id in ('c807ccaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','c807cccc-cccc-4ccc-8ccc-cccccccccccc')
     group by q.session_id,p.area,p.domain having count(*)<>2) then raise exception 'Wrong domain distribution'; end if;
-  if (select count(*) from private.exam_pool where not is_active)<>9 then raise exception 'Withdrawn question count is wrong'; end if;
+  if (select count(*) from private.exam_pool where not is_active)<>10 then raise exception 'Withdrawn question count is wrong'; end if;
   if exists(select 1 from public.user_exam_questions q join private.exam_pool p using(question_key)
     where q.session_id in ('c807ccaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','c807cccc-cccc-4ccc-8ccc-cccccccccccc')
       and not p.is_active) then raise exception 'New exam included a withdrawn question'; end if;

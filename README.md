@@ -1,10 +1,11 @@
 # ML4T Recall
 
-Next.js study interface for the bundled 929-question active ML4T pool. Questions,
-statements, explanations, and answer keys remain in `app/data/questions.json`;
-Supabase stores authentication records, the code/key catalog, answer attempts,
-exam sessions and drafts, private exam sampling/grading metadata, and a legacy
-aggregate-progress baseline.
+Next.js study interface for the bundled 928-question active ML4T pool. Active
+questions, explanations, and answer keys live in `app/data/questions.json`;
+withdrawn content is archived in `app/data/withdrawn-questions.json` for
+historical exam reviews. Supabase stores authentication records, the code/key
+catalog, answer attempts, exam sessions and drafts, private exam sampling/grading
+metadata, and a legacy aggregate-progress baseline.
 
 ## Local setup
 
@@ -40,9 +41,10 @@ publishable key in `.env.local`/deployment settings rather than source control.
   releases before answer history was introduced; new answers do not update it.
 - `app/data/question-keys.json` is the immutable bundled code→`smallint`
   manifest; it contains no question content.
-- Nine questions withdrawn on September 24, 2026 are excluded from study and
-  new exam sampling. Their stable keys and archived content remain available
-  for existing progress and historical exam reviews.
+- Nine questions withdrawn on September 24, 2026, plus ML-D3G1Q6 withdrawn on
+  October 1, 2026, are excluded from study and new exam sampling. Their stable
+  keys and archived content remain available for existing progress and
+  historical exam reviews.
 - `supabase/seed.sql` contains the same stable keys and question codes.
 - `npm run catalog:seed` preserves every existing assignment and appends keys
   for new bundled questions. Ship future additions in a new migration after

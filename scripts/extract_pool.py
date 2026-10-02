@@ -19,7 +19,7 @@ WITHDRAWN_OUTPUT = ROOT / "app" / "data" / "withdrawn-questions.json"
 
 # Keep withdrawn content for historical exam review, outside the active pool.
 WITHDRAWN_QUESTION_IDS = {
-    "ML-D1G2Q8", "ML-D2G4Q5", "ML-D3G1Q4", "ML-D3G3Q6",
+    "ML-D1G2Q8", "ML-D2G4Q5", "ML-D3G1Q4", "ML-D3G1Q6", "ML-D3G3Q6",
     "ML-D5G5Q4", "ML-D6G4Q6", "ML-D6G5Q5", "ML-D6G5Q6",
     "QF-D8G4Q1",
 }

@@ -53,7 +53,8 @@ test('cloud review uses finalized scores and distinguishes unanswered from false
 
 test('historical cloud exams can still decode a withdrawn question',()=>{
   const r=record();
-  const historical=withdrawn[0];
+  const historical=withdrawn.find(question=>question.id==='ML-D3G1Q6');
+  assert.ok(historical);
   const questions=[historical,...r.cloud.items.slice(1).map(item=>item.question)];
   const byKey=new Map(questions.map((question,index)=>[index+1,question]));
   const response={id:r.cloud.id,exam:1,started_at:new Date(1000).toISOString(),deadline:new Date(r.cloud.deadline).toISOString(),submitted_at:new Date(3000).toISOString(),revision:1,
