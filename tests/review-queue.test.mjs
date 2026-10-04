@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReviewBatch, REVIEW_BATCH_SIZE } from '../lib/review-queue.ts';
+import { buildQuestionQueue, buildReviewBatch, isReviewDue, REVIEW_BATCH_SIZE } from '../lib/review-queue.ts';
 
 const candidates = Array.from({ length: 25 }, (_, index) => ({ item: { id: `q${index}` }, index }));
 const state = (nextDue) => ({ attempts: 1, lastScore: 3, nextDue, lastAnswered: 0, statementCorrect: 3, statementTotal: 5 });
@@ -32,4 +32,24 @@ test('small decks wait until the current question is finished before repeating',
 
 test('repeated questions favor the least recently served', () => {
   assert.deepEqual(buildReviewBatch(candidates.slice(0, 3), {}, [2, 0, 1], [], 100, true, () => 0), [2, 0, 1]);
+});
+
+test('practice defaults to unseen, due mistakes, future mistakes, then mastered', () => {
+  const progress = { q0: { ...state(0), lastScore: 5 }, q1: state(200), q2: state(50) };
+  assert.deepEqual(buildQuestionQueue(candidates.slice(0, 4), progress, 100, undefined, () => 0), [3, 2, 1, 0]);
+  assert.deepEqual(buildReviewBatch(candidates.slice(0, 4), progress, [], [], 100, true, () => 0), [3, 2, 1, 0]);
+});
+
+test('perfect answers never count as due, including at an expired review date', () => {
+  assert.equal(isReviewDue(undefined, 100), false);
+  assert.equal(isReviewDue({ ...state(0), lastScore: 5 }, 100), false);
+  assert.equal(isReviewDue(state(101), 100), false);
+  assert.equal(isReviewDue(state(100), 100), true);
+  assert.equal(isReviewDue(state(0), 100), true);
+});
+
+test('queue preserves a filtered candidate set without adding unrelated questions', () => {
+  const selected = [candidates[12], candidates[18]];
+  assert.deepEqual(buildQuestionQueue(selected, { q0: state(0) }, 100, undefined, () => 0), [12, 18]);
+  assert.deepEqual(buildQuestionQueue([], {}, 100), []);
 });

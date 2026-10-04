@@ -8,6 +8,7 @@ import type { QuestionProgress } from "../lib/answer-history";
 import type { SavedQuestions } from "../lib/saved-questions";
 import {
   buildPoolMap,
+  filterPoolDomains,
   POOL_STATUS_LABELS,
   POOL_STATUSES,
   tileMatches,
@@ -50,22 +51,26 @@ export default function PoolMap({
   onPractice: (indexes: number[]) => void;
 }) {
   const [exam, setExam] = useState(1);
+  const [area, setArea] = useState("all");
+  const [domainKey, setDomainKey] = useState("all");
   const [statuses, setStatuses] = useState<Set<PoolStatus>>(new Set());
   const [savedOnly, setSavedOnly] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const tileRefs = useRef(new Map<number, HTMLButtonElement>());
 
-  const domains = useMemo(
+  const examDomains = useMemo(
     () => buildPoolMap(questions, exam, progress, saved, now),
     [questions, exam, progress, saved, now],
   );
+  const areaDomains = useMemo(() => filterPoolDomains(examDomains, area, "all"), [examDomains, area]);
+  const domains = useMemo(() => filterPoolDomains(areaDomains, "all", domainKey), [areaDomains, domainKey]);
   const counts = totalCounts(domains);
   const total = domains.reduce((sum, d) => sum + d.total, 0);
   const savedTotal = domains.reduce((sum, d) => sum + d.saved, 0);
   // Domain rows of tiles in display order, for arrow-key navigation.
   const rows = useMemo(() => domains.map((d) => d.groups.flat()), [domains]);
-  const filtering = statuses.size > 0 || savedOnly;
+  const filtering = statuses.size > 0 || savedOnly || area !== "all" || domainKey !== "all";
   const matching = rows.flat().filter((t) => tileMatches(t, statuses, savedOnly));
   const tabStop = focused ?? selected ?? rows[0]?.[0]?.index;
   const detail = selected === null ? null : questions[selected];
@@ -116,6 +121,7 @@ export default function PoolMap({
               aria-pressed={exam === value}
               onClick={() => {
                 setExam(value);
+                setDomainKey("all");
                 setSelected(null);
                 setFocused(null);
               }}
@@ -124,6 +130,31 @@ export default function PoolMap({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="pool-scope">
+        <label className="select-label">Knowledge area
+          <select value={area} onChange={(event) => {
+            setArea(event.target.value);
+            setDomainKey("all");
+            setSelected(null);
+            setFocused(null);
+          }}>
+            <option value="all">All knowledge areas</option>
+            <option value="Machine Learning">Machine Learning</option>
+            <option value="Quantitative Finance">Quantitative Finance</option>
+          </select>
+        </label>
+        <label className="select-label">Domain
+          <select value={domainKey} onChange={(event) => {
+            setDomainKey(event.target.value);
+            setSelected(null);
+            setFocused(null);
+          }}>
+            <option value="all">All matching domains</option>
+            {areaDomains.map((domain) => <option key={domain.key} value={domain.key}>{domain.domain}</option>)}
+          </select>
+        </label>
       </div>
 
       <div className="pool-summary" aria-hidden="true">
@@ -167,13 +198,17 @@ export default function PoolMap({
               onClick={() => {
                 setStatuses(new Set());
                 setSavedOnly(false);
+                setArea("all");
+                setDomainKey("all");
+                setSelected(null);
+                setFocused(null);
               }}
             >
               Clear filters
             </button>
             <button
               className="check-button pool-practice"
-              disabled={!hydrated || !matching.length}
+              disabled={!hydrated || (savedOnly && !savedReady) || !matching.length}
               onClick={() => onPractice(matching.map((t) => t.index))}
             >
               {matching.length > MAX_PRACTICE
@@ -186,7 +221,7 @@ export default function PoolMap({
       </div>
       <p className="pool-hint">
         {hydrated
-          ? `${total - counts.unseen} of ${total} Exam ${exam} questions seen. Each square is one question, grouped by topic; select one for details. Arrow keys move between squares.`
+          ? `${total - counts.unseen} of ${total} matching Exam ${exam} questions seen. Practice uses only the selected area, domain, and status filters. Each square is one question; select one for details. Arrow keys move between squares.`
           : "Loading your history…"}
       </p>
 
@@ -276,14 +311,14 @@ export default function PoolMap({
                           <dt>Last answered</dt>
                           <dd>{relativeDay(detailProgress.lastAnswered, now)}</dd>
                         </div>
-                        <div>
+                        {detailProgress.lastScore < 5 && <div>
                           <dt>Next review</dt>
                           <dd>
                             {detailProgress.nextDue <= now
                               ? "now"
                               : relativeDay(detailProgress.nextDue, now)}
                           </dd>
-                        </div>
+                        </div>}
                       </>
                     ) : (
                       <div>

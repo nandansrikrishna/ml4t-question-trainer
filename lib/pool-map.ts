@@ -21,13 +21,11 @@ export type PoolDomain = {
   groups: PoolTile[][]; counts: StatusCounts; saved: number; total: number;
 };
 
-// The last answer decides the status: anything short of 5/5 stays "missed"
-// until it is answered perfectly, and perfect answers become "due" when their
-// spaced review date arrives.
+// Mistakes become due at their retry date; a perfect last answer stays mastered.
 export function poolStatus(progress: QuestionProgress | undefined, now: number): PoolStatus {
   if (!progress) return "unseen";
-  if (progress.lastScore < 5) return "missed";
-  return progress.nextDue <= now ? "due" : "mastered";
+  if (progress.lastScore === 5) return "mastered";
+  return progress.nextDue <= now ? "due" : "missed";
 }
 
 export function emptyCounts(): StatusCounts {
@@ -77,6 +75,17 @@ export function totalCounts(domains: readonly PoolDomain[]): StatusCounts {
   for (const domain of domains)
     for (const status of POOL_STATUSES) counts[status] += domain.counts[status];
   return counts;
+}
+
+export function filterPoolDomains(
+  domains: readonly PoolDomain[],
+  area: string,
+  domainKey: string,
+) {
+  return domains.filter((domain) =>
+    (area === "all" || domain.area === area)
+    && (domainKey === "all" || domain.key === domainKey),
+  );
 }
 
 // An empty status filter shows every status.

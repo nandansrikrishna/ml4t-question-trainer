@@ -35,7 +35,7 @@ import PoolMap from "./pool-map";
 import { SaveQuestionButton } from "./save-question-button";
 import { useSavedQuestions } from "./use-saved-questions";
 import { savedQuestionIndexes } from "../lib/saved-questions";
-import { buildReviewBatch, REVIEW_REFILL_THRESHOLD } from "../lib/review-queue";
+import { buildQuestionQueue, buildReviewBatch, isReviewDue, REVIEW_REFILL_THRESHOLD } from "../lib/review-queue";
 
 type Statement = { label: string; text: string; answer: boolean; explanation: string };
 type Question = {
@@ -47,34 +47,6 @@ type Tab = "review" | "study" | "progress" | "guide" | "exam";
 type SessionKind = "review" | "daily" | "custom" | "study_more";
 
 const QUESTIONS = rawQuestions as Question[];
-
-function buildQuestionQueue(
-  candidates: { item: Question; index: number }[],
-  progressByQuestion: Record<string, QuestionProgress>,
-  now: number,
-  unseenFirst = false,
-) {
-  return candidates
-    .map((candidate) => ({ ...candidate, tieBreaker: Math.random() }))
-    .sort((left, right) => {
-      const leftProgress = progressByQuestion[left.item.id];
-      const rightProgress = progressByQuestion[right.item.id];
-      const priority = (progress: QuestionProgress | undefined) => {
-        if (!progress) return unseenFirst ? 0 : 1;
-        if (progress.nextDue <= now) return unseenFirst ? 1 : 0;
-        return 2;
-      };
-      const priorityDifference = priority(leftProgress) - priority(rightProgress);
-      if (priorityDifference) return priorityDifference;
-      if (leftProgress && rightProgress) {
-        return leftProgress.nextDue - rightProgress.nextDue
-          || leftProgress.attempts - rightProgress.attempts
-          || left.tieBreaker - right.tieBreaker;
-      }
-      return left.tieBreaker - right.tieBreaker;
-    })
-    .map(({ index }) => index);
-}
 
 function getAttemptSource(sessionKind: SessionKind): AttemptSource {
   if (sessionKind === "daily") return "daily";
@@ -187,7 +159,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
   const totalCorrect = Object.values(progressByQuestion).reduce((sum, progress) => sum + progress.statementCorrect, 0);
   const totalStatements = Object.values(progressByQuestion).reduce((sum, progress) => sum + progress.statementTotal, 0);
   const overallAccuracy = totalStatements ? Math.round((totalCorrect / totalStatements) * 100) : 0;
-  const dueReviewCount = Object.values(progressByQuestion).filter((progress) => progress.nextDue <= now).length;
+  const dueReviewCount = Object.values(progressByQuestion).filter((progress) => isReviewDue(progress, now)).length;
   const unseenCount = QUESTIONS.length - reviewedCount;
   const sessionAccuracy = sessionStatements ? Math.round((sessionCorrect / sessionStatements) * 100) : 0;
 
@@ -413,7 +385,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
           <div>
             <span className="eyebrow">{tab === "study" ? (sessionKind === "daily" ? `Daily 5 · Exam ${DAILY_EXAM}` : sessionKind === "study_more" ? `Study 10 more · Exam ${DAILY_EXAM}` : "Study session") : tab === "review" ? "Your review library" : tab === "progress" ? "Learning signal" : tab === "exam" ? "The exam room" : "How to use the pool"}</span>
             <h1>{tab === "study" ? (sessionKind === "daily" ? "Today’s five are ready." : sessionKind === "study_more" ? "Keep the momentum going." : "Practice with intent.") : tab === "review" ? (reviewSessionVisible ? activeReview : "Choose a deck. Keep learning.") : tab === "progress" ? "See what needs attention." : tab === "exam" ? "Put your preparation to the test." : "Make every question useful."}</h1>
-            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Due reviews come first, followed by unseen questions.") : tab === "review" ? (reviewSessionVisible && reviewDeck?.id === "saved" ? "Work through your saved questions once. Your bookmarks stay saved for next time." : "Keep reviewing at your own pace. Choose a deck or revisit your saved questions.") : tab === "progress" ? "Coverage and confidence, organized by domain." : tab === "exam" ? "A full-length rehearsal, at your own desk." : "A simple loop for turning recall into durable understanding."}</p>
+            <p className="topbar-subtitle">{tab === "study" ? (sessionKind === "daily" ? `The same five Exam ${DAILY_EXAM} questions for every student, refreshed each day.` : sessionKind === "study_more" ? "Ten more questions, with unseen material first." : "Unseen questions come first, followed by questions you missed.") : tab === "review" ? (reviewSessionVisible && reviewDeck?.id === "saved" ? "Work through your saved questions once. Your bookmarks stay saved for next time." : "Keep reviewing at your own pace. Choose a deck or revisit your saved questions.") : tab === "progress" ? "Coverage and confidence, organized by domain." : tab === "exam" ? "A full-length rehearsal, at your own desk." : "A simple loop for turning recall into durable understanding."}</p>
           </div>
           <div className="topbar-actions">
             <ThemeToggle />
@@ -496,7 +468,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
                 </div>
               ) : (
                 <div className="answer-result">
-                  <div><span className="answer-score">{resultCount}/5</span><p>{resultCount === 5 ? "Saved. Your next review was scheduled automatically." : (sessionKind === "review" ? "Saved. You’ll get another chance to practice this question." : "Saved. This question will return tomorrow.")}</p></div>
+                  <div><span className="answer-score">{resultCount}/5</span><p>{resultCount === 5 ? "Saved. This question is now mastered." : (sessionKind === "review" ? "Saved. You’ll get another chance to practice this question." : "Saved. This question will return tomorrow.")}</p></div>
                   <div className="question-action-buttons">
                     <SaveQuestionButton questionId={question.id} saved={!!bookmarks.items[question.id]?.saved} ready={bookmarks.ready} onToggle={bookmarks.toggle} />
                     <button className="check-button" key="next-question" onClick={nextQuestion}>{sessionKind === "review" ? ((reviewDeck?.id === "saved" ? !session.slice(current + 1).some((index) => savedIndexes.has(index)) : reviewDeck?.candidates.length === 0) ? "Finish review" : "Next question") : current + 1 >= session.length ? "Finish session" : "Next question"} <ArrowRight aria-hidden="true" /></button>
@@ -535,7 +507,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             <div className="metric-grid">
               <article><span>Questions seen</span><strong>{reviewedCount}</strong><small>of {QUESTIONS.length}</small></article>
               <article><span>Statement accuracy</span><strong>{totalStatements ? `${overallAccuracy}%` : "—"}</strong><small>across all saved attempts</small></article>
-              <article><span>Due reviews</span><strong>{dueReviewCount}</strong><small>previous answers ready to revisit</small></article>
+              <article><span>Due reviews</span><strong>{dueReviewCount}</strong><small>missed questions ready to revisit</small></article>
               <article><span>Learning coverage</span><strong>{Math.round((reviewedCount / QUESTIONS.length) * 100)}%</strong><small>{unseenCount} unseen · {user ? "cloud synced" : "on this device"}</small></article>
             </div>
             <PoolMap questions={QUESTIONS} progress={progressByQuestion} saved={bookmarks.items} savedReady={bookmarks.ready} onToggleSaved={bookmarks.toggle} now={now} hydrated={hydrated} onPractice={practiceQuestions} />
@@ -572,7 +544,7 @@ export default function Home({ dailyDateKey }: { dailyDateKey: string }) {
             <fieldset><legend>Knowledge area</legend><div className="segmented">{[["all","Mixed"],["Machine Learning","Machine Learning"],["Quantitative Finance","Quant Finance"]].map(([value,label]) => <button key={value} className={areaFilter === value ? "selected" : ""} onClick={() => { setAreaFilter(value); setDomainFilter("all"); }}>{label}</button>)}</div></fieldset>
             <label className="select-label">Domain<select value={domainFilter} onChange={(event) => setDomainFilter(event.target.value)}><option value="all">All matching domains</option>{domainOptions.map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label>
             <fieldset><legend>Questions</legend><div className="segmented compact">{[10,20,50].map((size) => <button key={size} className={sessionSize === size ? "selected" : ""} onClick={() => setSessionSize(size)}>{size}</button>)}</div></fieldset>
-            <div className="modal-note"><span><Sparkles aria-hidden="true" /></span><p><strong>Review-first sequencing</strong><br />Due reviews appear first, followed by unseen questions and then future reviews.</p></div>
+            <div className="modal-note"><span><Sparkles aria-hidden="true" /></span><p><strong>Unseen-first sequencing</strong><br />Unseen questions appear first, followed by due mistakes, other missed questions, and mastered questions.</p></div>
             <button className="start-button" onClick={startSession}>Start session <ArrowRight aria-hidden="true" /></button>
           </section>
         </div>

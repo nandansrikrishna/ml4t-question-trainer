@@ -140,6 +140,19 @@ npm run build
 npx supabase db query --linked --file supabase/tests/practice_exam_sync_test.sql
 ```
 
+### Practice sequencing and pool filters
+
+Custom sessions and **Study 10 more** prioritize unseen questions, then due
+mistakes, other missed questions, and mastered questions. **Review due** means the
+latest answer scored below 5/5 and its retry date has arrived. A latest score of
+5/5 stays **Mastered**, even after its stored review date passes.
+
+In **Progress**, combine the exam, knowledge area, domain, status, and saved
+filters before choosing **Practice**. Only matching questions enter the session,
+up to 50 at a time. For unseen Exam 1 ML questions, choose **Exam 1**,
+**Machine Learning**, and **Unseen**; optionally narrow to a single domain.
+Run `npm run test:review` and `npm run test:pool` to check sequencing and filtering.
+
 ### Saved questions
 
 Use **Save for review** during practice, an exam, or a submitted exam's answer review.

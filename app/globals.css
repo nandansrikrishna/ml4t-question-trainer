@@ -345,6 +345,8 @@ button svg { width: 16px; height: 16px; flex: 0 0 auto; stroke-width: 1.8; }
 .progress-reset p { margin: 0; }
 .pool-map-card { padding: 26px; border: 1px solid var(--border); border-radius: 17px; background: var(--card); box-shadow: var(--shadow-sm); }
 .segmented.pool-exam-toggle { grid-template-columns: repeat(2, 84px); width: max-content; }
+.pool-scope { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+.pool-scope .select-label { flex: 1 1 220px; margin: 0; }
 .pool-summary { display: flex; height: 10px; gap: 2px; overflow: hidden; border-radius: 99px; margin-bottom: 14px; }
 .pool-summary span { min-width: 3px; }
 .pool-missed { --tile: var(--pool-missed); }
