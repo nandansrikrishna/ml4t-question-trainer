@@ -149,7 +149,7 @@ latest answer scored below 5/5 and its retry date has arrived. A latest score of
 
 In **Progress**, combine the exam, knowledge area, domain, status, and saved
 filters before choosing **Practice**. Only matching questions enter the session,
-up to 50 at a time. For unseen Exam 1 ML questions, choose **Exam 1**,
+up to 50 at a time. For unseen Exam 2 ML questions, choose **Exam 2**,
 **Machine Learning**, and **Unseen**; optionally narrow to a single domain.
 Run `npm run test:review` and `npm run test:pool` to check sequencing and filtering.
 

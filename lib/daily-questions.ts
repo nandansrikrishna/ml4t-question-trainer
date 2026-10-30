@@ -1,5 +1,5 @@
-// Switch this to 2 when the Exam 1 window closes.
-export const DAILY_EXAM = 1;
+// Exam 1 window closed; daily questions now draw from Exam 2.
+export const DAILY_EXAM = 2;
 export const DAILY_QUESTION_COUNT = 5;
 export const DAILY_TIME_ZONE = "America/New_York";
 
